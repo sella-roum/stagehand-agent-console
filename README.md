@@ -23,9 +23,9 @@
 まず、プロジェクトをクローンし、依存関係をインストールします。
 
 ```bash
-# プロジェクトをクローン（もしクローン済みでなければ）
-# git clone <repository_url>
-# cd stagehand-agent-console
+# プロジェクトをクローン
+git clone https://github.com/sella-roum/stagehand-agent-console.git
+cd stagehand-agent-console
 
 # 依存関係のインストール
 npm install
