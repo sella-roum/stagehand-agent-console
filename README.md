@@ -75,5 +75,3 @@ npm start
 | **`goto`** | 指定したURLにページを移動させます。 | `goto:https://google.com` |
 | **`help`** | コマンドの一覧を表示します。 | `help` |
 | **`exit`** | デバッグコンソールを終了します。 | `exit` |
-
----
