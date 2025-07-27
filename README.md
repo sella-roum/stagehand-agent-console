@@ -23,9 +23,9 @@
 まず、プロジェクトをクローンし、依存関係をインストールします。
 
 ```bash
-# プロジェクトをクローン（もしクローン済みでなければ）
-# git clone <repository_url>
-# cd stagehand-agent-console
+# プロジェクトをクローン
+git clone https://github.com/sella-roum/stagehand-agent-console.git
+cd stagehand-agent-console
 
 # 依存関係のインストール
 npm install
@@ -75,5 +75,3 @@ npm start
 | **`goto`** | 指定したURLにページを移動させます。 | `goto:https://google.com` |
 | **`help`** | コマンドの一覧を表示します。 | `help` |
 | **`exit`** | デバッグコンソールを終了します。 | `exit` |
-
----
