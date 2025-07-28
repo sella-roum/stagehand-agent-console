@@ -1,5 +1,3 @@
-// src/taskAutomationAgent.ts
-
 /**
  * @file 高レベルなタスクを自律的に計画・実行するAIエージェント機能を提供します。
  */
@@ -10,6 +8,16 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || "";
+if (!GOOGLE_API_KEY) {
+  throw new Error("GOOGLE_API_KEYが設定されていません。");
+}
+
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "";
+if (!GEMINI_MODEL) {
+  throw new Error("GEMINI_MODELが設定されていません。");
+}
 
 // --- プランナーAIの出力形式をZodスキーマで厳密に定義 ---
 const planStepSchema = z.object({
@@ -35,11 +43,7 @@ const planSchema = z.array(planStepSchema).describe("実行ステップの計画
  * @throws {Error} APIキーが設定されていない場合や、AIからの応答が不正な場合にエラーをスローします。
  */
 async function callPlannerAI(prompt: string): Promise<z.infer<typeof planSchema>> {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEYが.envファイルに設定されていません。");
-  }
-
-  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const genAI = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
 
   // ZodスキーマをGoogle AIが解釈できるJSONスキーマ形式に変換
   const jsonSchema = zodToJsonSchema(planSchema, "planSchema");
@@ -47,7 +51,7 @@ async function callPlannerAI(prompt: string): Promise<z.infer<typeof planSchema>
   console.log("\n🧠 プランナーAIに思考させています...");
   
   const result = await genAI.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: GEMINI_MODEL,
     contents: prompt,
     config: {
       // JSONモードを有効化し、出力スキーマを厳密に指定

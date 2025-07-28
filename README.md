@@ -47,7 +47,10 @@ cp .env.example .env
 
 ```.env
 # .env
-GEMINI_API_KEY="AIza..."
+GOOGLE_GENERATIVE_AI_API_KEY="AIza..."
+GOOGLE_API_KEY="AIza..."
+GEMINI_MODEL="gemini-2.5-flash"
+
 ```
 
 ## 🚀 実行方法
