@@ -1,8 +1,8 @@
 # Stagehand Agent Console
 
-このプロジェクトは、AIを活用したブラウザ自動化フレームワーク [Stagehand](https://github.com/browserbase/stagehand) と Googleの [Gemini API](https://ai.google.dev/) を組み合わせ、**対話型AIエージェント**を構築するサンプルプロジェクトです。
+このプロジェクトは、AIを活用したブラウザ自動化フレームワーク [Stagehand](https://github.com/browserbase/stagehand) と、**Google Gemini**, **Groq Cloud (Llama 3など)**, **OpenRouter** といった複数の大規模言語モデル（LLM）を組み合わせ、**対話型AIエージェント**を構築するサンプルプロジェクトです。
 
-エラー発生時には、インタラクティブなデバッグコンソールが起動し、以下の強力な機能を組み合わせてリアルタイムに問題解決を行えます。
+実行時やエラー発生時に、インタラクティブなデバッグコンソールが起動し、以下の強力な機能を組み合わせてリアルタイムに問題解決を行えます。
 
 -   **AIへの自然言語指示:** 「ログインボタンを押して」のような曖昧な指示でブラウザを操作
 -   **自律型AIエージェント:** 「Playwrightのスター数を調べて」のような高レベルなタスクをAIが計画・実行
@@ -11,6 +11,7 @@
 
 ## ✨ 主な機能
 
+-   **マルチLLM対応:** `.env`ファイルを変更するだけで、Google Gemini, Groq, OpenRouter上の様々なモデルを簡単に切り替え可能。
 -   **対話型デバッグコンソール:** エラー発生時に起動し、AIとの対話や手動介入を可能にします。
 -   **プランナーAI (`agent`コマンド):** ユーザーが与えた高レベルなタスクをAIが分析し、具体的な実行ステップに分解して自律的に実行します。
 -   **AIによる直接操作 (`act`, `observe`コマンド):** 単一の操作を自然言語でAIに指示し、即座に実行・確認できます。
@@ -35,23 +36,40 @@ pnpm install
 
 ### 2. 環境変数の設定
 
-AI機能を利用するには、Google GeminiのAPIキーが必要です。
+AI機能を利用するには、各種サービスのAPIキーが必要です。
 
-`.env.example` ファイルをコピーして `.env` ファイルを作成し、APIキーを追記してください。
+`.env.example` ファイルをコピーして `.env` ファイルを作成し、利用したいAIプロバイダのAPIキーを設定してください。
 
 ```bash
 cp .env.example .env
 ```
 
-次に、`.env` ファイルを開き、APIキーを設定します。
+次に、`.env` ファイルを開き、設定を編集します。**少なくとも1つのプロバイダのAPIキーを設定し、`LLM_PROVIDER`で使用するプロバイダを指定してください。**
 
 ```.env
 # .env
-GOOGLE_GENERATIVE_AI_API_KEY="AIza..."
-GOOGLE_API_KEY="AIza..."
+
+# --- Google Gemini Settings ---
+GOOGLE_API_KEY="YOUR_GOOGLE_API_KEY"
 GEMINI_MODEL="gemini-2.5-flash"
 
+# --- Groq Cloud Settings ---
+GROQ_API_KEY="YOUR_GROQ_API_KEY"
+GROQ_MODEL="compound-beta-mini"
+
+# --- OpenRouter Settings ---
+OPENROUTER_API_KEY="YOUR_OPENROUTER_API_KEY"
+# モデル名は https://openrouter.ai/models で確認できます
+OPENROUTER_MODEL=""
+
+# --- Provider Selection ---
+# 'google', 'groq', または 'openrouter' を指定
+LLM_PROVIDER="google"
 ```
+
+-   **`LLM_PROVIDER`**: `agent`コマンドが使用するAIプロバイダを`google`, `groq`, `openrouter`の中から選択します。
+-   **`*_API_KEY`**: 利用するサービスのAPIキーを設定します。
+-   **`*_MODEL`**: 各プロバイダで使用するモデル名を指定します。
 
 ## 🚀 実行方法
 

@@ -7,13 +7,28 @@ dotenv.config();
 const LLM_PROVIDER = process.env.LLM_PROVIDER || 'google';
 
 let modelName: string;
-let modelClientOptions: { apiKey?: string };
+let modelClientOptions: { 
+  apiKey?: string;
+  baseURL?: string;
+  headers?: Record<string, string>;
+};
 
 // プロバイダに応じて設定を切り替え
 if (LLM_PROVIDER === 'groq') {
   console.log("🚀 Using Groq Cloud API");
-  modelName = `groq/${process.env.GROQ_MODEL || 'llama3-70b-8192'}`;
+  modelName = `groq/${process.env.GROQ_MODEL || 'compound-beta-mini'}`;
   modelClientOptions = { apiKey: process.env.GROQ_API_KEY };
+} else if (LLM_PROVIDER === 'openrouter') {
+  console.log("🚀 Using OpenRouter API");
+  modelName = `${process.env.OPENROUTER_MODEL || ''}`;
+  modelClientOptions = { 
+    apiKey: process.env.OPENROUTER_API_KEY,
+    baseURL: "https://openrouter.ai/api/v1",
+    headers: {
+      'HTTP-Referer': 'http://localhost:3000',
+      'X-Title': 'Stagehand Agent Console',
+    }
+  };
 } else {
   console.log("🚀 Using Google Gemini API");
   modelName = `google/${process.env.GEMINI_MODEL || 'gemini-2.5-flash'}`;

@@ -1,23 +1,18 @@
 /**
  * @file 高レベルなタスクを自律的に計画・実行するAIエージェント機能を提供します。
+ * このバージョンは、Vercel AI SDKを利用してGoogle Gemini, Groq, OpenRouterを動的に切り替え可能です。
  */
 
-import { GoogleGenAI } from "@google/genai";
 import type { Page } from "@browserbasehq/stagehand";
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || "";
-if (!GOOGLE_API_KEY) {
-  throw new Error("GOOGLE_API_KEYが設定されていません。");
-}
-
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "";
-if (!GEMINI_MODEL) {
-  throw new Error("GEMINI_MODELが設定されていません。");
-}
+// Vercel AI SDKのコア機能と各プロバイダをインポート
+import { generateObject, LanguageModel } from "ai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGroq } from "@ai-sdk/groq";
+import { createOpenAI } from "@ai-sdk/openai"; // OpenRouter用にOpenAIプロバイダを使用
 
 // --- プランナーAIの出力形式をZodスキーマで厳密に定義 ---
 const planStepSchema = z.object({
@@ -36,40 +31,51 @@ const planStepSchema = z.object({
 const planSchema = z.array(planStepSchema).describe("実行ステップの計画");
 
 /**
- * Geminiモデルを呼び出して、タスクの実行計画を生成します。
- * Google AIのJSONモードを利用して、信頼性の高い構造化データを取得します。
+ * 汎用的なプランナーAI呼び出し関数 (Google/Groq/OpenRouter対応)
  * @param prompt - モデルに渡すプロンプト文字列
  * @returns - AIによって生成され、Zodスキーマで検証された実行計画の配列
- * @throws {Error} APIキーが設定されていない場合や、AIからの応答が不正な場合にエラーをスローします。
  */
 async function callPlannerAI(prompt: string): Promise<z.infer<typeof planSchema>> {
-  const genAI = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
-
-  // ZodスキーマをGoogle AIが解釈できるJSONスキーマ形式に変換
-  const fullJsonSchema = zodToJsonSchema(planSchema, {
-    $refStrategy: "none",
-  });
-
-  console.log("\n🧠 プランナーAIに思考させています...");
+  const LLM_PROVIDER = process.env.LLM_PROVIDER || 'google';
   
-  const result = await genAI.models.generateContent({
-    model: GEMINI_MODEL,
-    contents: prompt,
-    config: {
-      // JSONモードを有効化し、出力スキーマを厳密に指定
-      responseMimeType: "application/json",
-      responseJsonSchema: fullJsonSchema,
-    },
-  });
+  let llm: LanguageModel;
 
-  const responseText = result.text;
-  if (!responseText) {
-    throw new Error("プランナーAIから空の応答が返されました。");
+  // プロバイダに応じてAIモデルのインスタンスを生成
+  if (LLM_PROVIDER === 'groq') {
+    const groqApiKey = process.env.GROQ_API_KEY;
+    if (!groqApiKey) throw new Error("GROQ_API_KEYが.envファイルに設定されていません。");
+    const groq = createGroq({ apiKey: groqApiKey });
+    llm = groq(process.env.GROQ_MODEL || 'compound-beta-mini');
+  } else if (LLM_PROVIDER === 'openrouter') {
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    if (!openRouterApiKey) throw new Error("OPENROUTER_API_KEYが.envファイルに設定されていません。");
+    // OpenAI互換APIとしてOpenRouterを設定
+    const openrouter = createOpenAI({
+      apiKey: openRouterApiKey,
+      baseURL: "https://openrouter.ai/api/v1",
+      headers: {
+        'HTTP-Referer': 'http://localhost:3000',
+        'X-Title': 'Stagehand Agent Console',
+      }
+    });
+    llm = openrouter(process.env.OPENROUTER_MODEL || 'anthropic/claude-3-haiku-20240307');
+  } else {
+    const googleApiKey = process.env.GOOGLE_API_KEY;
+    if (!googleApiKey) throw new Error("GOOGLE_API_KEYが.envファイルに設定されていません。");
+    const google = createGoogleGenerativeAI({ apiKey: googleApiKey });
+    llm = google(process.env.GEMINI_MODEL || 'gemini-2.5-flash');
   }
 
-  // AIのJSON出力をパースし、Zodスキーマで検証
-  const planJson = JSON.parse(responseText);
-  return planSchema.parse(planJson);
+  console.log("\n🧠 プランナーAIに思考させています...");
+
+  // Vercel AI SDKの `generateObject` を使用して構造化された計画を取得
+  const { object: planJson } = await generateObject({
+    model: llm,
+    prompt: prompt,
+    schema: planSchema,
+  });
+
+  return planJson;
 }
 
 /**
@@ -114,8 +120,10 @@ ${task}
 
 ${errorOrFeedback ? `# 直前の情報: 直前のステップで以下のエラーが発生したか、ユーザーから以下のフィードバックがありました。これを考慮して計画を修正してください。\n情報: ${errorOrFeedback}` : ''}
 
-# 出力
-あなたの回答は、必ず指定されたJSONスキーマに従うJSONオブジェクトの配列としてください。
+# 出力に関する厳格な指示
+- あなたの応答は、必ず指定されたJSONスキーマに従うJSONオブジェクトの配列でなければなりません。
+- JSON配列の前後に、いかなるテキスト（挨拶、説明、前置きなど）やマークダウンのコードブロック指定（\`\`\`json ... \`\`\`）も絶対に追加しないでください。
+- あなたの応答は、必ず \`[\` で始まり、 \`]\` で終わる純粋なJSON配列でなければなりません。
 `;
     return promptTemplate;
 }
@@ -135,10 +143,15 @@ export async function taskAutomationAgent(task: string, page: Page) {
 
   // 最初のページの状態を取得
   let currentSummary = '';
-  const initialExtraction = await page.extract();
-  if (initialExtraction?.page_text) {
-    currentSummary = initialExtraction.page_text.substring(0, 2000);
+  try {
+    const initialExtraction = await page.extract();
+    if (initialExtraction?.page_text) {
+      currentSummary = initialExtraction.page_text.substring(0, 2000);
+    }
+  } catch (e) {
+    console.warn("初期ページの要約取得に失敗しました。");
   }
+
 
   let userFeedback: string | undefined = undefined;
 
@@ -183,18 +196,27 @@ export async function taskAutomationAgent(task: string, page: Page) {
         let result: any = "成功";
         switch (currentStep.command) {
             case "goto":
-                await page.goto(currentStep.argument!);
+                if (!currentStep.argument) throw new Error("gotoコマンドにはURLの引数が必要です。");
+                await page.goto(currentStep.argument);
                 break;
             case "act":
-                await page.act(currentStep.argument!);
+                if (!currentStep.argument) throw new Error("actコマンドには操作内容の引数が必要です。");
+                await page.act(currentStep.argument);
                 break;
             case "extract":
-                const extraction = await page.extract(currentStep.argument!);
-                result = extraction;
+                if (currentStep.argument) {
+                    result = await page.extract(currentStep.argument);
+                } else {
+                    result = await page.extract();
+                }
                 console.log("  📝 抽出結果:", result);
                 break;
             case "observe":
-                result = await page.observe(currentStep.argument!);
+                if (currentStep.argument) {
+                    result = await page.observe(currentStep.argument);
+                } else {
+                    result = await page.observe();
+                }
                 console.log("  👀 観察結果:", result);
                 break;
             case "finish":
@@ -212,10 +234,16 @@ export async function taskAutomationAgent(task: string, page: Page) {
     }
 
     // 4. 次の計画のためにページの状態を更新
-    const nextExtraction = await page.extract();
-    if (nextExtraction?.page_text) {
-      currentSummary = nextExtraction.page_text.substring(0, 2000);
+    try {
+        const nextExtraction = await page.extract();
+        if (nextExtraction?.page_text) {
+          currentSummary = nextExtraction.page_text.substring(0, 2000);
+        }
+    } catch(e) {
+        console.warn("ページ要約の更新に失敗しました。");
+        currentSummary = "ページの要約を取得できませんでした。";
     }
+    
     // ネットワークの状態が安定するのを待つ
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
