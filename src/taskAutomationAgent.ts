@@ -46,7 +46,9 @@ async function callPlannerAI(prompt: string): Promise<z.infer<typeof planSchema>
   const genAI = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
 
   // ZodスキーマをGoogle AIが解釈できるJSONスキーマ形式に変換
-  const jsonSchema = zodToJsonSchema(planSchema, "planSchema");
+  const fullJsonSchema = zodToJsonSchema(planSchema, {
+    $refStrategy: "none",
+  });
 
   console.log("\n🧠 プランナーAIに思考させています...");
   
@@ -56,7 +58,7 @@ async function callPlannerAI(prompt: string): Promise<z.infer<typeof planSchema>
     config: {
       // JSONモードを有効化し、出力スキーマを厳密に指定
       responseMimeType: "application/json",
-      responseJsonSchema: jsonSchema,
+      responseJsonSchema: fullJsonSchema,
     },
   });
 
