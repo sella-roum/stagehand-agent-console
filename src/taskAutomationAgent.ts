@@ -89,7 +89,7 @@ async function callPlannerAI(prompt: string): Promise<z.infer<typeof planSchema>
  */
 function buildPrompt(task: string, url: string, summary: string, history: any[], errorOrFeedback?: string): string {
     const promptTemplate = `
-あなたは、Stagehandというブラウザ自動化ツールを駆使する専門家アシスタントです。ユーザーから与えられた最終目標を達成するために、具体的な行動計画をステップ・バイ・ステップで立案してください。
+あなたは、Stagehandというブラウザ自動化ツールを駆使する専門家アシスタントです。あなたの役割は、ユーザーから与えられた最終目標を達成するまで、現在の状況を分析し、段階的に行動計画を立案し続けることです。
 
 # 利用可能なコマンド
 - "goto": "指定されたURLに移動する。引数はURL文字列。"
@@ -122,6 +122,9 @@ ${errorOrFeedback ? `# 直前の情報: 直前のステップで以下のエラ�
 
 # 出力に関する厳格な指示
 - あなたの応答は、必ず指定されたJSONスキーマに従うJSONオブジェクトの配列でなければなりません。
+- **最終目標を達成するために、次に実行すべき3〜5ステップの具体的な行動計画を立案してください。**
+- **もし直前の計画が成功裏に完了した場合は、現在のページ状態からタスクを続行するための次のステップを計画してください。**
+- **最終目標が完全に達成されたと確信できる場合にのみ、"finish"コマンドを使用してください。まだタスクの途中である場合は、絶対に"finish"を使用しないでください。**
 - JSON配列の前後に、いかなるテキスト（挨拶、説明、前置きなど）やマークダウンのコードブロック指定（\`\`\`json ... \`\`\`）も絶対に追加しないでください。
 - あなたの応答は、必ず \`[\` で始まり、 \`]\` で終わる純粋なJSON配列でなければなりません。
 `;
@@ -170,70 +173,74 @@ export async function taskAutomationAgent(task: string, page: Page) {
         break;
     }
 
-    // 2. 計画の最初のステップを取り出す
-    const currentStep = plan[0];
+    // 複数ステップの計画を順番に実行するループ
+    for (const currentStep of plan) {
+      // 2. 計画の各ステップを取り出す
+      
+      // ユーザーへのメッセージング処理
+      if (currentStep.messageToUser) {
+          console.log(`\n💬 AIからのメッセージ: ${currentStep.messageToUser}`);
+          
+          if (currentStep.messageToUser.includes('?')) {
+              const rl = readline.createInterface({ input, output });
+              const answer = await rl.question("  あなたの応答 > ");
+              userFeedback = answer;
+              rl.close();
+              executionHistory.push({ step: currentStep, userFeedback: answer });
+              // ユーザーからの応答を得たので、この計画の実行を中断し、再計画へ
+              break; // forループを抜ける
+          }
+      }
+      
+      console.log(`\n[ステップ ${loopCount}] ${currentStep.reasoning}`);
+      console.log(`  コマンド: ${currentStep.command}, 引数: ${currentStep.argument || 'なし'}`);
 
-    // ユーザーへのメッセージング処理
-    if (currentStep.messageToUser) {
-        console.log(`\n💬 AIからのメッセージ: ${currentStep.messageToUser}`);
-        
-        // メッセージが質問形式の場合、ユーザーの応答を待つ
-        if (currentStep.messageToUser.includes('?')) {
-            const rl = readline.createInterface({ input, output });
-            const answer = await rl.question("  あなたの応答 > ");
-            userFeedback = answer; // ユーザーの応答を次のプロンプトへのフィードバックとする
-            rl.close();
-            // ユーザーからの応答を得たので、このステップは実行せずに、新しい計画を立てるためにループの先頭に戻る
-            executionHistory.push({ step: currentStep, userFeedback: answer });
-            continue; 
-        }
-    }
-    
-    console.log(`\n[ステップ ${loopCount}/${maxLoops}] ${currentStep.reasoning}`);
-    console.log(`  コマンド: ${currentStep.command}, 引数: ${currentStep.argument || 'なし'}`);
+      try {
+          let result: any = "成功";
+          switch (currentStep.command) {
+              case "goto":
+                  if (!currentStep.argument) throw new Error("gotoコマンドにはURLの引数が必要です。");
+                  await page.goto(currentStep.argument);
+                  break;
+              case "act":
+                  if (!currentStep.argument) throw new Error("actコマンドには操作内容の引数が必要です。");
+                  await page.act(currentStep.argument);
+                  break;
+              case "extract":
+                  if (currentStep.argument) {
+                      result = await page.extract(currentStep.argument);
+                  } else {
+                      result = await page.extract();
+                  }
+                  console.log("  📝 抽出結果:", result);
+                  break;
+              case "observe":
+                  if (currentStep.argument) {
+                      result = await page.observe(currentStep.argument);
+                  } else {
+                      result = await page.observe();
+                  }
+                  console.log("  👀 観察結果:", result);
+                  break;
+              case "finish":
+                  console.log(`\n🎉 タスク完了！ 最終回答: ${currentStep.argument}`);
+                  return; // タスク完了のためエージェント全体を終了
+          }
+          console.log("  ✅ 成功");
+          executionHistory.push({ step: currentStep, result });
 
-    try {
-        let result: any = "成功";
-        switch (currentStep.command) {
-            case "goto":
-                if (!currentStep.argument) throw new Error("gotoコマンドにはURLの引数が必要です。");
-                await page.goto(currentStep.argument);
-                break;
-            case "act":
-                if (!currentStep.argument) throw new Error("actコマンドには操作内容の引数が必要です。");
-                await page.act(currentStep.argument);
-                break;
-            case "extract":
-                if (currentStep.argument) {
-                    result = await page.extract(currentStep.argument);
-                } else {
-                    result = await page.extract();
-                }
-                console.log("  📝 抽出結果:", result);
-                break;
-            case "observe":
-                if (currentStep.argument) {
-                    result = await page.observe(currentStep.argument);
-                } else {
-                    result = await page.observe();
-                }
-                console.log("  👀 観察結果:", result);
-                break;
-            case "finish":
-                console.log(`\n🎉 タスク完了！ 最終回答: ${currentStep.argument}`);
-                return; // タスク完了のため正常終了
-        }
-        console.log("  ✅ 成功");
-        executionHistory.push({ step: currentStep, result });
-
-    } catch (error: any) {
-        // 3. エラーが発生した場合（自己修正）
-        console.error(`  ❌ ステップ ${loopCount} でエラー: ${error.message}`);
-        userFeedback = `前のステップでエラーが発生しました: ${error.message}`; // エラーを次の計画立案のインプットにする
-        executionHistory.push({ step: currentStep, error: error.message });
+      } catch (error: any) {
+          // 3. エラーが発生した場合（自己修正）
+          console.error(`  ❌ ステップ実行中にエラー: ${error.message}`);
+          userFeedback = `前のステップでエラーが発生しました: ${error.message}`;
+          executionHistory.push({ step: currentStep, error: error.message });
+          // エラーが発生したので、この計画の実行を中断し、再計画へ
+          break; // forループを抜ける
+      }
     }
 
     // 4. 次の計画のためにページの状態を更新
+    // ユーザーからのフィードバックがある場合、または計画の実行が完了した場合にページ状態を更新
     try {
         const nextExtraction = await page.extract();
         if (nextExtraction?.page_text) {
