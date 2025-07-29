@@ -66,7 +66,7 @@ async function callPlannerAI(prompt: string): Promise<z.infer<typeof planSchema>
     llm = google(process.env.GEMINI_MODEL || 'gemini-2.5-flash');
   }
 
-  console.log("\n🧠 プランナーAIに思考させています...");
+  console.log("\n🧠 AIが思考しています...");
 
   // Vercel AI SDKの `generateObject` を使用して構造化された計画を取得
   const { object: planJson } = await generateObject({
@@ -140,7 +140,9 @@ ${errorOrFeedback ? `# 直前の情報: 直前のステップで以下のエラ�
 export async function taskAutomationAgent(task: string, page: Page) {
   let executionHistory: any[] = [];
   let loopCount = 0;
-  const maxLoops = 15; // 無限ループを防止するためのカウンター
+  const maxLoops = 10; // 無限ループを防止するためのカウンター
+  
+  let totalStepsExecuted = 0;
 
   console.log(`🚀 タスク開始: ${task}`);
 
@@ -175,6 +177,8 @@ export async function taskAutomationAgent(task: string, page: Page) {
 
     // 複数ステップの計画を順番に実行するループ
     for (const currentStep of plan) {
+      totalStepsExecuted++;
+
       // 2. 計画の各ステップを取り出す
       
       // ユーザーへのメッセージング処理
@@ -192,7 +196,7 @@ export async function taskAutomationAgent(task: string, page: Page) {
           }
       }
       
-      console.log(`\n[ステップ ${loopCount}] ${currentStep.reasoning}`);
+      console.log(`\n[ステップ ${totalStepsExecuted}] ${currentStep.reasoning}`);
       console.log(`  コマンド: ${currentStep.command}, 引数: ${currentStep.argument || 'なし'}`);
 
       try {
@@ -256,6 +260,6 @@ export async function taskAutomationAgent(task: string, page: Page) {
   }
 
   if (loopCount >= maxLoops) {
-      console.warn("⚠️ 最大ループ回数に達したため、処理を中断しました。");
+      console.warn(`⚠️ 最大試行回数（${maxLoops}回）に達したため、処理を中断しました。`);
   }
 }
