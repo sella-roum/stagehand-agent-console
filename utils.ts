@@ -2,6 +2,7 @@ import { ObserveResult, Page } from "@browserbasehq/stagehand";
 import boxen from "boxen";
 import chalk from "chalk";
 import fs from "fs/promises";
+import path from "node:path";
 import { z } from "zod";
 
 export function announce(message: string, title?: string) {
@@ -168,4 +169,21 @@ export async function actWithCache(
 
   // Execute the action
   await page.act(actionToCache);
+}
+
+// --- (新規) 安全なファイルパスを取得・検証する関数 ---
+export function getSafePath(filename: string): string {
+    const workspaceDir = path.resolve(process.cwd(), 'workspace');
+    const intendedPath = path.resolve(workspaceDir, filename);
+
+    // パスがworkspaceディレクトリ内に収まっているか検証
+    if (!intendedPath.startsWith(workspaceDir)) {
+        throw new Error(`セキュリティエラー: ディレクトリトラバーサルが検出されました。ファイル操作は 'workspace' ディレクトリ内に限定されています。`);
+    }
+    
+    // ディレクトリが存在しない場合は作成
+    const dir = path.dirname(intendedPath);
+    fs.mkdir(dir, { recursive: true });
+
+    return intendedPath;
 }

@@ -23,14 +23,13 @@ async function main() {
 
   // Stagehandセッションを初期化し、ブラウザを起動
   await stagehand.init();
-  const page = stagehand.page;
 
   try {
     console.log("自動化処理を開始します...");
 
     // 初期状態でデバッグコンソールを起動する
     console.log("対話型デバッグコンソールを開始します。");
-    await interactiveDebugConsole(page);
+    await interactiveDebugConsole(stagehand);
 
     console.log("対話型デバッグが終了しました。");
 
@@ -41,7 +40,7 @@ async function main() {
     
     try {
       // エラー発生時の状態からでもデバッグを試みられるようにする
-      await interactiveDebugConsole(page);
+      await interactiveDebugConsole(stagehand);
     } catch (debugError: any) {
       console.error(`\n❌ デバッグコンソールの起動に失敗しました: ${debugError.message}`);
     }

@@ -3,10 +3,22 @@
  * ユーザーからのコマンド入力を受け付け、AIへの指示やPlaywrightの操作を実行します。
  */
 
-import type { Page } from "@browserbasehq/stagehand";
+import type { Page, Stagehand } from "@browserbasehq/stagehand";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { taskAutomationAgent } from "./taskAutomationAgent.js";
+
+/**
+ * ユーザーにy/nの確認を求める関数
+ * @param prompt - 表示するプロンプトメッセージ
+ * @returns ユーザーが 'y' を入力した場合は true, それ以外は false
+ */
+export async function confirmAction(prompt: string): Promise<boolean> {
+  const rl = readline.createInterface({ input, output });
+  const answer = await rl.question(`${prompt} (y/n) `);
+  rl.close();
+  return answer.toLowerCase() === 'y';
+}
 
 /**
  * コンソールに表示されるヘルプメッセージ。
@@ -30,9 +42,10 @@ const helpMessage = `
  * 対話型のデバッグコンソールを起動し、ユーザーからの入力を待ち受けます。
  * ユーザーはAIへの指示、Playwright Inspectorの起動、コードの直接実行などを
  * コマンドを通じて行えます。
- * @param page - 操作対象となるPlaywrightのPageオブジェクト
+ * @param stagehand - 操作対象となるStagehandのインスタンス
  */
-export async function interactiveDebugConsole(page: Page): Promise<void> {
+export async function interactiveDebugConsole(stagehand: Stagehand): Promise<void> {
+  const page = stagehand.page;
   // 標準入出力を受け付けるためのreadlineインターフェースを作成
   const rl = readline.createInterface({ input, output });
   console.log(helpMessage);
@@ -70,7 +83,7 @@ export async function interactiveDebugConsole(page: Page): Promise<void> {
             break;
           }
           console.log(`🤖 エージェントにタスクを依頼しました: "${argument}"`);
-          await taskAutomationAgent(argument, page);
+          await taskAutomationAgent(argument, stagehand);
           console.log("✅ エージェントのタスク処理が完了しました。");
           break;
 
