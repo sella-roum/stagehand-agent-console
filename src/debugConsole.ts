@@ -29,7 +29,7 @@ const helpMessage = `
 利用可能なコマンド:
   act:<指示>       - AIに自然言語で操作を指示します (例: act:'ログイン'ボタンをクリック)
   observe:[指示]   - ページ上の操作可能な要素をAIに探させます (例: observe:クリックできるリンク)
-  agent:<タスク>   - AIに高レベルなタスクを自律的に実行させます (例: agent:playwrightのgithubのスター数を調べて)
+  agent:<タスク>   - AIに高レベルなタスクを自律的に実行させます (例: agent:'https://www.stagehand.dev/' にアクセスして、ページ内にあるGithubリンクへアクセスし、そのリポジトリのスターの数を教えて)
   inspect          - Playwright Inspectorを起動します。閉じるまで待機します。
   eval:<コード>    - 任意のPlaywright/JSコードを実行します (例: eval:await page.title())
   goto:<URL>        - 指定したURLに移動します。

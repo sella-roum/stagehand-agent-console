@@ -126,6 +126,6 @@ npm start
 | **`agent`** | **[推奨]** AIにタスクを依頼し、自律的に計画・実行・自己修復させます。 | `agent:'https://www.stagehand.dev/' にアクセスして、ページ内にあるGithubリンクへアクセスし、そのリポジトリのスターの数を教えて` |
 | **`inspect`** | Playwright Inspectorを起動し、GUIでページを調査します。 | `inspect` |
 | **`eval`** | 任意のPlaywright/JavaScriptコードをその場で実行します。 | `eval:console.log(await page.title())` |
-| **`goto`** | 指定したURLにページを移動させます。 | `goto:https://google.com` |
+| **`goto`** | 指定したURLにページを移動させます。 | `goto:https://www.stagehand.dev/` |
 | **`help`** | コマンドの一覧を表示します。 | `help` |
 | **`exit`** | デバッグコンソールを終了します。 | `exit` |

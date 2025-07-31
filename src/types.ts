@@ -1,34 +1,20 @@
 import { z } from "zod";
+import { ObserveResult } from "@browserbasehq/stagehand";
+// ToolCallをインポート
+import { ToolCall } from "ai";
 
-// planStepSchemaをここで定義する方がより適切
-export const planStepSchema = z.object({
-  step: z.number().describe("ステップ番号"),
-  command: z.enum([
-    "goto", 
-    "act", 
-    "extract", 
-    "observe", 
-    "finish",
-    "new_tab",
-    "switch_tab",
-    "close_tab",
-    "write_file",
-    "read_file"
-  ])
-    .describe("実行するコマンドの種類"),
-  argument: z.string().nullable().describe("コマンドに渡す引数。不要な場合はnull。"),
-  reasoning: z.string().describe("このステップを実行する思考プロセス"),
-  expected_outcome: z.string().describe("このステップが成功した後に期待されるページの状態変化の簡潔な説明。例えば、「ログイン後のダッシュボードページにいるはず」「検索結果が表示されているはず」など。"),
-  messageToUser: z.string().nullable().optional().describe("ユーザーへのメッセージや質問。不要な場合はnull。"),
-});
-
-export type PlanStep = z.infer<typeof planStepSchema>;
+// エラー分析の文脈で必要となるため、簡略化したPlanStepを定義
+export type PlanStep = {
+  command: string;
+  argument: string | null;
+};
 
 export type ExecutionRecord = {
-  step: PlanStep;
+  toolCall: ToolCall<string, any>;
   result?: any;
   error?: string;
   userFeedback?: string;
+  observationResult?: ObserveResult[];
 };
 
 export type TabInfo = {
