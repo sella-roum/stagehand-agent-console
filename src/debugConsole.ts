@@ -32,7 +32,7 @@ const helpMessage = `
   agent:<タスク>   - AIに高レベルなタスクを自律的に実行させます (例: agent:'https://www.stagehand.dev/' にアクセスして、ページ内にあるGithubリンクへアクセスし、そのリポジトリのスターの数を教えて)
   inspect          - Playwright Inspectorを起動します。閉じるまで待機します。
   eval:<コード>    - 任意のPlaywright/JSコードを実行します (例: eval:await page.title())
-  goto:<URL>        - 指定したURLに移動します。
+  goto:<URL>       - 指定したURLに移動します。
   help             - このヘルプメッセージを表示します。
   exit             - デバッグを終了し、スクリプトを閉じます。
 ------------------------------------
