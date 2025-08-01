@@ -86,7 +86,7 @@ GEMINI_MODEL="gemini-2.5-flash"
 
 # --- Groq Cloud Settings ---
 GROQ_API_KEY="YOUR_GROQ_API_KEY"
-GROQ_MODEL="compound-beta-mini"
+GROQ_MODEL="meta-llama/llama-4-scout-17b-16e-instruct"
 
 # --- OpenRouter Settings ---
 OPENROUTER_API_KEY="YOUR_OPENROUTER_API_KEY"
