@@ -98,10 +98,24 @@ export async function clearOverlays(page: Page) {
   });
 }
 
+// --- キャッシュキー生成関数 ---
+function getCacheKey(url: string, instruction: string): string {
+  try {
+    const urlObject = new URL(url);
+    const key = `${urlObject.hostname}${urlObject.pathname} | ${instruction}`;
+    return key;
+  } catch (e) {
+    // 無効なURL（例: about:blank）の場合は、指示のみをキーとする
+    return instruction;
+  }
+}
+
 export async function simpleCache(
+  page: Page,
   instruction: string,
   actionToCache: ObserveResult,
 ) {
+  const key = getCacheKey(page.url(), instruction);
   // Save action to cache.json
   try {
     // Read existing cache if it exists
@@ -114,7 +128,7 @@ export async function simpleCache(
     }
 
     // Add new action to cache
-    cache[instruction] = actionToCache;
+    cache[key] = actionToCache;
 
     // Write updated cache to file
     await fs.writeFile("cache.json", JSON.stringify(cache, null, 2));
@@ -124,12 +138,14 @@ export async function simpleCache(
 }
 
 export async function readCache(
+  page: Page,
   instruction: string,
 ): Promise<ObserveResult | null> {
+  const key = getCacheKey(page.url(), instruction);
   try {
     const existingCache = await fs.readFile("cache.json", "utf-8");
     const cache: Record<string, ObserveResult> = JSON.parse(existingCache);
-    return cache[instruction] || null;
+    return cache[key] || null;
   } catch (error) {
     return null;
   }
@@ -147,7 +163,7 @@ export async function actWithCache(
   instruction: string,
 ): Promise<void> {
   // Try to get action from cache first
-  const cachedAction = await readCache(instruction);
+  const cachedAction = await readCache(page, instruction);
   if (cachedAction) {
     console.log(chalk.blue("Using cached action for:"), instruction);
     await page.act(cachedAction);
@@ -158,10 +174,14 @@ export async function actWithCache(
   const results = await page.observe(instruction);
   console.log(chalk.blue("Got results:"), results);
 
+  if (results.length === 0) {
+    throw new Error(`キャッシュ用の要素が見つかりませんでした: "${instruction}"`);
+  }
+
   // Cache the playwright action
   const actionToCache = results[0];
   console.log(chalk.blue("Taking cacheable action:"), actionToCache);
-  await simpleCache(instruction, actionToCache);
+  await simpleCache(page, instruction, actionToCache);
   // OPTIONAL: Draw an overlay over the relevant xpaths
   await drawObserveOverlay(page, results);
   await page.waitForTimeout(1000); // Can delete this line, just a pause to see the overlay
@@ -171,7 +191,7 @@ export async function actWithCache(
   await page.act(actionToCache);
 }
 
-// --- (新規) 安全なファイルパスを取得・検証する関数 ---
+// --- 安全なファイルパスを取得・検証する関数 ---
 export function getSafePath(filename: string): string {
     const workspaceDir = path.resolve(process.cwd(), 'workspace');
     const intendedPath = path.resolve(workspaceDir, filename);

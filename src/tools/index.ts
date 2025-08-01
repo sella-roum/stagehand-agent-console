@@ -7,6 +7,8 @@ import { summarizeTool } from "./summarize.js";
 import { writeFileTool, readFileTool } from "./fileSystem.js";
 import { newTabTool, switchTabTool, closeTabTool } from "./tabManagement.js";
 import { askUserTool } from "./askUser.js";
+import { finishTool } from "./finish.js";
+import { visionAnalyzeTool, clickAtCoordinatesTool } from "./vision.js";
 
 // すべてのツールを配列としてエクスポート
 export const availableTools = [
@@ -22,6 +24,9 @@ export const availableTools = [
   switchTabTool,
   closeTabTool,
   askUserTool,
+  finishTool,
+  visionAnalyzeTool,
+  clickAtCoordinatesTool,
 ];
 
 // 名前でツールを高速に検索するためのMapを作成
