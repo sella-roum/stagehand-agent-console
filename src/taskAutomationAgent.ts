@@ -12,28 +12,14 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 
 import { AgentState } from "./agentState.js";
-import { ReflectionResult, reflectionSchema } from "./types.js";
 import { getBasePrompt } from "./prompts/base.js";
 import { formatContext } from "./prompts/context.js";
-import { getReflectionPrompt, formatReflection } from "./prompts/reflection.js";
-import { availableTools } from "./tools/index.js";
-
-// --- 各ツールを個別にインポートして、型を明確にする ---
-import { gotoTool } from "./tools/goto.js";
-import { actTool } from "./tools/act.js";
-import { cachedActTool } from "./tools/cached_act.js";
-import { extractTool } from "./tools/extract.js";
-import { observeTool } from "./tools/observe.js";
-import { summarizeTool } from "./tools/summarize.js";
-import { writeFileTool, readFileTool } from "./tools/fileSystem.js";
-import { newTabTool, switchTabTool, closeTabTool } from "./tools/tabManagement.js";
-import { askUserTool } from "./tools/askUser.js";
-import { finishTool } from "./tools/finish.js";
-import { visionAnalyzeTool, clickAtCoordinatesTool } from "./tools/vision.js";
-
+import { availableTools, toolRegistry } from "./tools/index.js";
+import { requestUserApproval } from "./debugConsole.js";
+import { generateAndSaveSkill } from "./skillManager.js";
 
 // LLMインスタンスを生成するヘルパー関数
-function getLlmInstance(): LanguageModel {
+export function getLlmInstance(): LanguageModel {
     const agentMode = process.env.AGENT_MODE || 'text';
     const LLM_PROVIDER = process.env.LLM_PROVIDER || 'google';
 
@@ -104,8 +90,20 @@ async function setupGlobalEventHandlers(stagehand: Stagehand, llm: LanguageModel
   });
 }
 
-export async function taskAutomationAgent(task: string, stagehand: Stagehand) {
-    const state = new AgentState(stagehand);
+/**
+ * 実行エージェントとして、与えられたサブゴールを達成します。
+ * @param subgoal - 司令塔エージェントから与えられた現在のサブゴール
+ * @param stagehand - Stagehandのインスタンス
+ * @param state - セッション全体で共有されるエージェントの状態
+ * @param originalTask - ユーザーが最初に与えた高レベルなタスク
+ * @returns サブゴールの達成に成功した場合はtrue、失敗した場合はfalse
+ */
+export async function taskAutomationAgent(
+    subgoal: string, 
+    stagehand: Stagehand,
+    state: AgentState,
+    originalTask: string
+): Promise<boolean> {
     const maxLoops = 15;
     const llm = getLlmInstance();
 
@@ -115,7 +113,7 @@ export async function taskAutomationAgent(task: string, stagehand: Stagehand) {
 
     const messages: CoreMessage[] = [
         { role: 'system', content: getBasePrompt() },
-        { role: 'user', content: `最終目標: ${task}` },
+        { role: 'user', content: `最終目標: ${originalTask}\n現在のサブゴール: ${subgoal}` },
     ];
 
     for (let i = 0; i < maxLoops; i++) {
@@ -134,81 +132,47 @@ export async function taskAutomationAgent(task: string, stagehand: Stagehand) {
         });
 
         if (finishReason === 'stop' && text) {
-            console.log(`\n🎉 タスク完了！ 最終回答: ${text}`);
-            return;
+            console.log(`\n🎉 サブゴール完了！ AIの所感: ${text}`);
+            await generateAndSaveSkill(state.getHistory(), llm);
+            return true;
         }
 
         if (!toolCalls || toolCalls.length === 0) {
-            console.log("🤔 AIがツールを呼び出しませんでした。処理を終了します。");
-            return;
+            console.log("🤔 AIがツールを呼び出しませんでした。サブゴールを完了とみなします。");
+            return true;
         }
 
-        messages.push({ role: 'assistant', content: toolCalls.map(tc => ({ type: 'tool-call', toolCallId: tc.toolCallId, toolName: tc.toolName, args: tc.args })) });
+        const approvedPlan = await requestUserApproval(state, toolCalls);
+        if (!approvedPlan) {
+            console.log("ユーザーが計画を拒否しました。サブゴールの実行を中断します。");
+            return false;
+        }
+
+        messages.push({ role: 'assistant', content: approvedPlan.map(tc => ({ type: 'tool-call', toolCallId: tc.toolCallId, toolName: tc.toolName, args: tc.args })) });
 
         const toolResults = await Promise.all(
-            toolCalls.map(async (toolCall) => {
+            approvedPlan.map(async (toolCall) => {
+                const tool = toolRegistry.get(toolCall.toolName);
+                if (!tool) {
+                    const errorMsg = `不明なツールです: ${toolCall.toolName}`;
+                    console.error(`  ❌ エラー: ${errorMsg}`);
+                    state.addHistory({ toolCall, error: errorMsg });
+                    return { toolCallId: toolCall.toolCallId, toolName: toolCall.toolName, result: `エラー: ${errorMsg}` };
+                }
                 try {
                     const { toolName, args } = toolCall;
                     console.log(`  ⚡️ 実行中: ${toolName}(${JSON.stringify(args)})`);
                     
-                    // --- 堅牢なswitch文によるディスパッチ ---
-                    let result;
-                    switch (toolName) {
-                        case 'goto':
-                            result = await gotoTool.execute(state, args);
-                            break;
-                        case 'act':
-                            result = await actTool.execute(state, args);
-                            break;
-                        case 'cached_act':
-                            result = await cachedActTool.execute(state, args);
-                            break;
-                        case 'extract':
-                            result = await extractTool.execute(state, args);
-                            break;
-                        case 'observe':
-                            result = await observeTool.execute(state, args);
-                            break;
-                        case 'summarize':
-                            result = await summarizeTool.execute(state, args);
-                            break;
-                        case 'write_file':
-                            result = await writeFileTool.execute(state, args);
-                            break;
-                        case 'read_file':
-                            result = await readFileTool.execute(state, args);
-                            break;
-                        case 'new_tab':
-                            result = await newTabTool.execute(state, args);
-                            break;
-                        case 'switch_tab':
-                            result = await switchTabTool.execute(state, args);
-                            break;
-                        case 'close_tab':
-                            result = await closeTabTool.execute(state, args);
-                            break;
-                        case 'ask_user':
-                            result = await askUserTool.execute(state, args);
-                            break;
-                        case 'vision_analyze':
-                            result = await visionAnalyzeTool.execute(state, args, llm);
-                            break;
-                        case 'click_at_coordinates':
-                            result = await clickAtCoordinatesTool.execute(state, args);
-                            break;
-                        case 'finish':
-                            result = await finishTool.execute(state, args, llm, task);
-                            break;
-                        default:
-                            throw new Error(`不明なツールです: ${toolName}`);
-                    }
+                    const result = await tool.execute(state, args, llm, originalTask);
                     
                     const resultLog = typeof result === 'object' ? JSON.stringify(result, null, 2) : result;
                     console.log(`  ✅ 成功: ${resultLog.substring(0, 200)}...`);
                     
+                    state.addHistory({ toolCall, result });
                     return { toolCallId: toolCall.toolCallId, toolName: toolCall.toolName, result };
                 } catch (error: any) {
                     console.error(`  ❌ エラー (${toolCall.toolName}): ${error.message}`);
+                    state.addHistory({ toolCall, error: error.message });
                     return { toolCallId: toolCall.toolCallId, toolName: toolCall.toolName, result: `エラー: ${error.message}` };
                 }
             })
@@ -216,7 +180,7 @@ export async function taskAutomationAgent(task: string, stagehand: Stagehand) {
         
         for (const toolResult of toolResults) {
             if (toolResult.toolName === 'finish' && typeof toolResult.result === 'string' && toolResult.result.startsWith('SELF_EVALUATION_COMPLETE')) {
-                return;
+                return true; // finishが呼ばれたら成功とみなす
             }
         }
 
@@ -227,4 +191,5 @@ export async function taskAutomationAgent(task: string, stagehand: Stagehand) {
     }
 
     console.warn(`⚠️ 最大試行回数（${maxLoops}回）に達したため、処理を中断しました。`);
+    return false;
 }

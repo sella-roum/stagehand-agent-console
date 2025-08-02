@@ -30,3 +30,5 @@ export const reflectionSchema = z.object({
 });
 
 export type ReflectionResult = z.infer<typeof reflectionSchema>;
+
+export type InterventionMode = 'autonomous' | 'confirm' | 'edit';

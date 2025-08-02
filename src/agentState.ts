@@ -1,11 +1,12 @@
 import { Page, BrowserContext, Stagehand } from "@browserbasehq/stagehand";
-import { ExecutionRecord, TabInfo } from "./types.js";
+import { ExecutionRecord, TabInfo, InterventionMode } from "./types.js";
 
 export class AgentState {
   private history: ExecutionRecord[] = [];
   private pages: Page[] = [];
   private stagehand: Stagehand; 
   private context: BrowserContext;
+  private interventionMode: InterventionMode = 'confirm'; // デフォルト値を設定
 
   constructor(stagehandInstance: Stagehand) {
     this.stagehand = stagehandInstance;
@@ -27,6 +28,27 @@ export class AgentState {
    */
   getHistory(): ExecutionRecord[] {
     return this.history;
+  }
+
+  /**
+   * 介入モードを設定します。
+   * @param mode - 設定する介入モード
+   */
+  public setInterventionMode(mode: InterventionMode): void {
+    if (['autonomous', 'confirm', 'edit'].includes(mode)) {
+      this.interventionMode = mode;
+      console.log(`✅ 介入モードが '${mode}' に設定されました。`);
+    } else {
+      console.error(`❌ 無効なモードです: ${mode}。'autonomous', 'confirm', 'edit' のいずれかを指定してください。`);
+    }
+  }
+
+  /**
+   * 現在の介入モードを取得します。
+   * @returns 現在の介入モード
+   */
+  public getInterventionMode(): InterventionMode {
+    return this.interventionMode;
   }
 
   /**

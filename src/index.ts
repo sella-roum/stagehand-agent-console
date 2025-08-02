@@ -6,6 +6,9 @@
 import { Stagehand } from "@browserbasehq/stagehand";
 import StagehandConfig from "../stagehand.config.js";
 import { interactiveDebugConsole } from "./debugConsole.js";
+import { initializeTools } from "./tools/index.js";
+import { AgentState } from "./agentState.js";
+import { InterventionMode } from "./types.js";
 
 /**
  * メイン実行関数
@@ -14,6 +17,9 @@ import { interactiveDebugConsole } from "./debugConsole.js";
  * 最終的にセッションを安全にクローズします。
  */
 async function main() {
+  // アプリケーション起動時に動的スキルを読み込む
+  await initializeTools();
+
   // Stagehandのインスタンスを生成
   const stagehand = new Stagehand({
       ...StagehandConfig,
@@ -24,12 +30,23 @@ async function main() {
   // Stagehandセッションを初期化し、ブラウザを起動
   await stagehand.init();
 
+  // セッション全体で共有するAgentStateインスタンスを作成
+  const state = new AgentState(stagehand);
+
+  // 起動時引数から介入モードを設定
+  const args = process.argv.slice(2);
+  const modeArg = args.find(arg => arg.startsWith('--mode='));
+  if (modeArg) {
+    const initialMode = modeArg.split('=')[1] as InterventionMode;
+    state.setInterventionMode(initialMode);
+  }
+
   try {
     console.log("自動化処理を開始します...");
 
     // 初期状態でデバッグコンソールを起動する
     console.log("対話型デバッグコンソールを開始します。");
-    await interactiveDebugConsole(stagehand);
+    await interactiveDebugConsole(stagehand, state);
 
     console.log("対話型デバッグが終了しました。");
 
@@ -40,7 +57,7 @@ async function main() {
     
     try {
       // エラー発生時の状態からでもデバッグを試みられるようにする
-      await interactiveDebugConsole(stagehand);
+      await interactiveDebugConsole(stagehand, state);
     } catch (debugError: any) {
       console.error(`\n❌ デバッグコンソールの起動に失敗しました: ${debugError.message}`);
     }
