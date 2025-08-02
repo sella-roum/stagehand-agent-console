@@ -35,7 +35,7 @@ graph TD
     end
 
     subgraph Chief Agent [司令塔エージェント]
-        B(サブゴールリストを計画)
+        B(タスクを分解してサブゴールリストを計画)
     end
 
     subgraph Task Automation Agent [実行エージェント]
@@ -116,11 +116,16 @@ OPENROUTER_MODEL=""
 # --- Provider Selection ---
 # 'google', 'groq', または 'openrouter' を指定
 LLM_PROVIDER="google"
+
+# 'text' または 'vision' を指定。'vision' にすると画像認識を利用します。
+AGENT_MODE="text"
+
 ```
 
 -   **`LLM_PROVIDER`**: `agent`コマンドが使用するAIプロバイダを`google`, `groq`, `openrouter`の中から選択します。
 -   **`*_API_KEY`**: 利用するサービスのAPIキーを設定します。
 -   **`*_MODEL`**: 各プロバイダで使用するモデル名を指定します。
+-   **`AGENT_MODE`**: LLMモデルが画像認識を使用できる場合は、`vision`にすると画像認識を利用します。
 
 ## 🚀 実行方法
 
@@ -181,7 +186,7 @@ test.describe("Stagehand AI Agent", () => {
 
     // 3. エージェントの実行結果を検証
     expect(result.is_success).toBe(true);
-    expect(result.reasoning.toLowerCase()).toContain('スター');
+    expect.soft(result.reasoning.toLowerCase()).toContain('star');
     expect(result.reasoning).toMatch(/\d+/); // 結果に数字が含まれているか
 
     // 4. 最終的なブラウザの状態を検証

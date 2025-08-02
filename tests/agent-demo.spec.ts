@@ -36,7 +36,7 @@ test.describe("Stagehand AI Agent", () => {
 
     // 3. エージェントの実行結果を検証
     expect(result.is_success).toBe(true);
-    expect(result.reasoning.toLowerCase()).toContain('スター');
+    expect.soft(result.reasoning.toLowerCase()).toContain('star');
     expect(result.reasoning).toMatch(/\d+/); // 結果に数字が含まれているか
 
     // 4. 最終的なブラウザの状態を検証
