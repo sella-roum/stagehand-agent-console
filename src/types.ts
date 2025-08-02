@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { ObserveResult } from "@browserbasehq/stagehand";
 // ToolCallをインポート
-import { ToolCall } from "ai";
+import { ToolCall, LanguageModel } from "ai";
+import { AgentState } from "./agentState.js";
 
 // エラー分析の文脈で必要となるため、簡略化したPlanStepを定義
 export type PlanStep = {
@@ -32,3 +33,21 @@ export const reflectionSchema = z.object({
 export type ReflectionResult = z.infer<typeof reflectionSchema>;
 
 export type InterventionMode = 'autonomous' | 'confirm' | 'edit';
+
+// エージェントの最終実行結果の型
+export type AgentExecutionResult = {
+  is_success: boolean;
+  reasoning: string;
+};
+
+export type CustomTool = {
+  name: string;
+  description: string;
+  schema: z.ZodObject<any, any, any, any, any>;
+  execute: (
+    state: AgentState,
+    args: any,
+    llm: LanguageModel,
+    initialTask: string
+  ) => Promise<any>;
+};

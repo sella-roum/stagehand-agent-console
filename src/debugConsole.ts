@@ -31,16 +31,33 @@ export async function confirmAction(prompt: string): Promise<boolean> {
 const helpMessage = `
 --- 対話型デバッグコンソール ---
 利用可能なコマンド:
-  act:<指示>       - AIに自然言語で操作を指示します (例: act: 'ログイン'ボタンをクリック)
-  observe:[指示]   - ページ上の操作可能な要素をAIに探させます (例: observe:クリックできるリンク)。
-  extract:[指示]   - ページから情報を抽出します (例: extract:記事のタイトル)。引数なしで全テキスト抽出。
-  agent:<タスク>   - AIに高レベルなタスクを自律的に実行させます (例: agent:'https://www.stagehand.dev/' にアクセスして、ページ内にあるGithubリンクへアクセスし、そのリポジトリのスターの数を教えて)。
-  inspect          - Playwright Inspectorを起動します。閉じるまで待機します。
-  eval:<コード>    - 任意のPlaywright/JSコードを実行します (例: eval:await page.title())。
-  goto:<URL>       - 指定したURLに移動します。
-  mode <mode>      - 介入モードを設定 ('autonomous', 'confirm', 'edit')。引数なしで現在のモードを表示。
-  help             - このヘルプメッセージを表示します。
-  exit             - デバッグを終了し、スクリプトを閉じます。
+
+  agent:<タスク>     - [推奨] AIにタスクを依頼し、自律的に計画・実行・自己修復させます。
+                     例: agent:StagehandのGitHubリポジトリのスター数を調べて
+
+  act:<指示>         - AIに単一の具体的な操作を自然言語で指示します。
+                     例: act:'Issues'タブをクリックして
+
+  observe:[指示]     - 現在のページで操作可能な要素をAIに探させます。
+                     例: observe:クリックできる全てのボタン
+
+  extract:[指示]     - ページから情報を抽出します。引数なしで全テキストを抽出。
+                     例: extract:記事のタイトル
+
+  inspect            - Playwright Inspectorを起動し、GUIでページを調査します。
+
+  eval:<コード>      - 任意のPlaywright/JavaScriptコードをその場で実行します。
+                     例: eval:console.log(await page.title())
+
+  goto:<URL>         - 指定したURLにページを移動させます。
+                     例: goto:https://www.stagehand.dev/
+
+  mode:<mode>        - 介入モードを設定 (autonomous, confirm, edit)。引数なしで現在値表示。
+                     例: mode:autonomous
+
+  help               - このヘルプメッセージを表示します。
+
+  exit               - デバッグコンソールを終了します。
 ------------------------------------
 `;
 

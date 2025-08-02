@@ -4,7 +4,8 @@
   "scripts": {
     "build": "tsc",
     "start": "tsx src/index.ts",
-    "postinstall": "playwright install"
+    "postinstall": "playwright install",
+    "test:agent": "playwright test tests/agent.spec.ts"
   },
   "dependencies": {
     "@ai-sdk/groq": "^1.2.9",

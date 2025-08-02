@@ -11,9 +11,11 @@ import { askUserTool } from "./askUser.js";
 import { finishTool } from "./finish.js";
 import { visionAnalyzeTool, clickAtCoordinatesTool } from "./vision.js";
 import { loadSkills } from "../skillManager.js";
+import { CustomTool } from "../types.js"; // ★★★ 変更: CustomToolをインポート ★★★
 
 // すべてのツールを配列としてエクスポート
-export let availableTools = [
+// ★★★ 変更: 型をCustomTool[]に指定 ★★★
+export let availableTools: CustomTool[] = [
   gotoTool,
   actTool,
   cachedActTool,
@@ -32,7 +34,7 @@ export let availableTools = [
 ];
 
 // 名前でツールを高速に検索するためのMapを作成
-export let toolRegistry = new Map(
+export let toolRegistry = new Map<string, CustomTool>(
   availableTools.map(tool => [tool.name, tool])
 );
 
@@ -44,7 +46,7 @@ export async function initializeTools() {
   const dynamicSkills = await loadSkills();
   
   dynamicSkills.forEach((skill, name) => {
-    const skillTool = {
+    const skillTool: CustomTool = {
       name: name,
       description: skill.description,
       // スキルに渡す引数を汎用的に受け入れるスキーマ
@@ -52,12 +54,11 @@ export async function initializeTools() {
       // スキルモジュールのexecute関数を呼び出すラッパー
       execute: (state: any, { args }: any) => skill.execute(state, args),
     };
-    // `any`へのキャストは、動的ツールと静的ツールの型をマージするために必要
-    availableTools.push(skillTool as any);
+    availableTools.push(skillTool);
   });
 
   // 新しいツールセットでtoolRegistryを再構築
-  toolRegistry = new Map(
+  toolRegistry = new Map<string, CustomTool>(
     availableTools.map(tool => [tool.name, tool])
   );
 }

@@ -1,51 +1,71 @@
 # Stagehand Agent Console
 
-このプロジェクトは、AIを活用したブラウザ自動化フレームワーク [Stagehand](https://github.com/browserbase/stagehand) を基盤とし、**Google Gemini**, **Groq Cloud (Llama 3など)**, **OpenRouter** といった複数の大規模言語モデル（LLM）を組み合わせ、**対話型AIエージェント**を構築するサンプルプロジェクトです。
+このプロジェクトは、AIを活用したブラウザ自動化フレームワーク [Stagehand](https://github.com/browserbase/stagehand) を基盤とし、**階層型マルチエージェント・アーキテクチャ**を採用した高度な自律型AIエージェントのサンプルプロジェクトです。
 
-単にコマンドを実行するだけでなく、エージェントは自らの行動結果を**検証**し、エラー発生時にはその原因を**反省**して**自己修復**を試みます。マルチタブブラウジングや安全なファイルシステム連携など、複雑なタスクを遂行するための高度な機能を備えています。
+司令塔となる**Chief Agent**がタスクを計画し、現場担当の**Task Automation Agent**がそれを実行します。エージェントは単にコマンドを実行するだけでなく、自らの行動結果を**検証**し、エラー発生時にはその原因を**反省**して**自己修復**を試みます。さらに、実行履歴から汎用的な操作を学習し、**新しいスキル（ツール）を動的に自動生成する**能力も備えています。
 
 実行時やエラー発生時には、インタラクティブなデバッグコンソールが起動し、AIエージェントの自律的な動作をリアルタイムで監視・介入できます。
 
 ## ✨ 主な機能
 
--   **マルチLLM対応:** `.env`ファイルを変更するだけで、Google Gemini, Groq, OpenRouter上の様々なモデルを簡単に切り替え可能。
--   **対話型デバッグコンソール:** エラー発生時に起動し、AIとの対話や手動介入を可能にします。
--   **プランナーAI (`agent`コマンド):** ユーザーが与えた高レベルなタスクをAIが分析し、具体的な実行ステップに分解して自律的に実行します。
--   **AIによる直接操作 (`act`, `observe`コマンド):** 単一の操作を自然言語でAIに指示し、即座に実行・確認できます。
--   **Playwrightネイティブ機能へのアクセス:** `inspect`コマンドでPlaywright Inspectorを、`eval`コマンドで任意のコードを実行でき、AIの操作とシームレスに連携できます。
+-   **階層型マルチエージェント**: 司令塔AIがタスクを計画し、実行AIがサブゴールを一つずつ達成する、信頼性の高いアーキテクチャ。
+-   **自己修復・自己検証ループ**: 各ステップの実行後に結果を検証し、失敗した場合は原因を自己分析して代替案を試し、タスクの続行を目指します。
+-   **動的なスキル生成**: 実行履歴から再利用可能な操作パターンを学習し、新しいツール（スキル）をTypeScriptコードとして自動生成。エージェントが経験から成長します。
+-   **マルチLLM対応**: `.env`ファイルを変更するだけで、Google Gemini, Groq, OpenRouter上の様々なモデルを簡単に切り替え可能。
+-   **高度なツールセット**: マルチタブ操作、安全なローカルファイル読み書き、視覚AIによる画像認識・クリックなど、複雑なタスクを遂行するためのツールを標準装備。
+-   **対話型デバッグコンソール**: エラー発生時や任意のタイミングで起動し、AIとの対話や手動介入を可能にします。自律レベル（完全自動/確認/編集）も動的に変更可能。
+-   **Playwrightテストとの統合**: エージェントの機能を通常のテストコードから呼び出せる非対話モードをサポート。CI/CDでの自動テストを容易にします。
 
-## 💭 期待する結果（エージェント機能は、下記を実現できる可能性はありますが、安定性については検証中です）
+## 🧠 エージェントアーキテクチャと思考サイクル
 
--   **自律的なタスク計画と実行 (`agent`コマンド):**
-    「競合他社の最新ニュースを調べてレポートを作成して」のような高レベルなタスクをAIが分析し、具体的な実行ステップに分解して自律的に実行します。
+このエージェントは、2種類のAIが連携し、以下の思考サイクルに基づいて自律的に動作します。
 
--   **自己修復・自己検証ループ (Self-Healing & Self-Verification):**
-    エージェントは各ステップの実行後に、その操作が期待通りの結果をもたらしたかを**自己検証**します。失敗した場合は、エラーの原因を**自己分析（反省）**し、別の方法でタスクを達成するための新しい計画を自動的に立案します。これにより、動的なウェブサイトや予期せぬエラーに対して高い堅牢性を持ちます。
+1.  **司令塔エージェント (Chief Agent)**: ユーザーからの高レベルなタスクを受け取り、達成までの**サブゴールリスト（計画）**を作成します。
+2.  **実行エージェント (Task Automation Agent)**: 計画リストからサブゴールを一つずつ取り出し、達成するまで**思考と行動のループ**を実行します。
+    -   `[ 状況認識 ] -> [ ツール選択 ] -> [ 実行 ] -> [ 検証 ]`
+    -   **失敗した場合**: `[ 反省 (エラー分析) ] -> [ 再計画 (代替案考案) ]` という自己修復ループに入ります。
+3.  **ループ**: 一つのサブゴールが完了すると、実行エージェントは司令塔（の計画リスト）に戻り、次のサブゴールを取得して実行を続けます。すべてのサブゴールが完了すると、タスク全体が終了します。
 
--   **マルチタブブラウジング:**
-    複数のタブを同時に開き、タブを切り替えながら情報を収集・比較するなど、複雑なリサーチタスクを効率的に実行できます。
+このプロセスを図で示すと以下のようになります。
 
--   **安全なファイルシステム連携:**
-    ブラウザで収集した情報をローカルファイルに書き出したり、ローカルの設定ファイルを読み込んでタスクに反映させたりできます。ファイル操作はプロジェクト内の`workspace`ディレクトリに限定され、実行前には必ずユーザーの許可を求めるため、安全性も確保されています。
+```mermaid
+graph TD
+    subgraph User Interaction
+        A[ユーザーからの高レベルなタスク]
+    end
 
--   **マルチLLM対応:**
-    `.env`ファイルを変更するだけで、Google Gemini, Groq, OpenRouter上の様々なモデルを簡単に切り替え可能です。
+    subgraph Chief Agent [司令塔エージェント]
+        B(サブゴールリストを計画)
+    end
 
-## 🧠 エージェントの思考サイクル
+    subgraph Task Automation Agent [実行エージェント]
+        C{サブゴール実行ループ}
+        D[状況認識]
+        E[ツール選択]
+        F[実行]
+        G{検証}
+        H[反省: エラー分析]
+        I[再計画: 代替案考案]
+    end
 
-このエージェントは、以下の思考サイクルに基づいて自律的に動作します。
+    subgraph System
+        J{全サブゴール完了？}
+        K[タスク完了]
+    end
 
-```
-[ 計画 (Plan) ] -> [ 実行 (Execute) ] -> [ 検証 (Verify) ]
-      |                                        |
-      | (成功)                                 | (失敗)
-      |                                        v
-      +--------------------------------> [ 反省 (Reflect) ]
-      |                                        |
-      +----------------------------------------+
-      |
-      v
-[ 次の計画へ (Re-plan) ]
+    A --> B
+    B -->|次のサブゴールを渡す| C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G -- 成功 --> J
+    G -- 失敗 --> H
+    H --> I
+    I --> C
+
+    J -- No --> B
+    J -- Yes --> K
 ```
 
 ## 🛠️ セットアップ
@@ -104,6 +124,8 @@ LLM_PROVIDER="google"
 
 ## 🚀 実行方法
 
+### 対話型コンソールでの実行
+
 セットアップが完了したら、以下のコマンドでプロジェクトを起動します。
 
 ```bash
@@ -112,17 +134,76 @@ npm start
 
 スクリプトが起動すると、対話型デバッグコンソールが開始されます。`workspace`ディレクトリは、ファイル操作コマンドが初めて実行される際に自動的に作成されます。
 
+### Playwrightテスト内での実行（非対話テストモード）
+
+このエージェントは、通常のPlaywrightテストケース内で直接呼び出すことができます。これにより、AIエージェントの複雑な振る舞いをCI/CDパイプラインで自動的にテストすることが可能です。
+
+`runAgentTask`関数をインポートし、`test`ブロック内で呼び出すだけで、指定したタスクをエージェントが非対話的に実行します。
+
+**使用例: `tests/agent-demo.spec.ts`**
+
+```typescript
+import { test, expect } from "@playwright/test";
+import { Stagehand } from "@browserbasehq/stagehand";
+import StagehandConfig from "../stagehand.config.js";
+import { runAgentTask } from "../src/agentRunner.js";
+
+// テストのタイムアウトを5分に設定
+test.setTimeout(300000);
+
+test.describe("Stagehand AI Agent", () => {
+  let stagehand: Stagehand;
+
+  test.beforeEach(async () => {
+    stagehand = new Stagehand({
+      ...StagehandConfig,
+      localBrowserLaunchOptions: { headless: true }, // テスト中はヘッドレスで実行
+    });
+    await stagehand.init();
+  });
+
+  test.afterEach(async () => {
+    await stagehand.close();
+  });
+
+  test("should navigate to Stagehand GitHub and find the star count", async () => {
+    // 1. 通常のPlaywright/Stagehandコードで初期状態を設定
+    const page = stagehand.page;
+    await page.goto("https://www.google.com");
+    await page.act("'Stagehand AI'と入力して");
+    await page.keyboard.press("Enter");
+    await stagehand.page.waitForURL("**/search**");
+
+    // 2. AIエージェントに後続のタスクを依頼
+    const task = "Stagehandの公式サイトを見つけてアクセスし、GitHubリポジトリのスター数を報告して";
+    
+    const result = await runAgentTask(task, stagehand);
+
+    // 3. エージェントの実行結果を検証
+    expect(result.is_success).toBe(true);
+    expect(result.reasoning.toLowerCase()).toContain('スター');
+    expect(result.reasoning).toMatch(/\d+/); // 結果に数字が含まれているか
+
+    // 4. 最終的なブラウザの状態を検証
+    const finalUrl = stagehand.page.url();
+    expect(finalUrl).toContain("github.com/browserbase/stagehand");
+  });
+});
+```
+
 ## 🤖 コンソールの使い方
 
 コンソールが起動したら、`>` プロンプトに対して以下のコマンドを入力できます。
 
 | コマンド | 説明 | 使用例 |
 | :--- | :--- | :--- |
+| **`agent`** | **[推奨]** AIにタスクを依頼し、自律的に計画・実行・自己修復させます。 | `agent:StagehandのGitHubリポジトリのスター数を調べて` |
 | **`act`** | AIに単一の具体的な操作を自然言語で指示します。 | `act:'Issues'タブをクリックして` |
 | **`observe`** | 現在のページで操作可能な要素をAIに探させます。 | `observe:クリックできる全てのボタン` |
-| **`agent`** | **[推奨]** AIにタスクを依頼し、自律的に計画・実行・自己修復させます。 | `agent:'https://www.stagehand.dev/' にアクセスして、ページ内にあるGithubリンクへアクセスし、そのリポジトリのスターの数を教えて` |
+| **`extract`** | ページから情報を抽出します。引数なしで全テキストを抽出。 | `extract:記事のタイトル` |
 | **`inspect`** | Playwright Inspectorを起動し、GUIでページを調査します。 | `inspect` |
 | **`eval`** | 任意のPlaywright/JavaScriptコードをその場で実行します。 | `eval:console.log(await page.title())` |
 | **`goto`** | 指定したURLにページを移動させます。 | `goto:https://www.stagehand.dev/` |
+| **`mode`** | 介入モードを設定 (`autonomous`, `confirm`, `edit`)。引数なしで現在値表示。 | `mode:autonomous` |
 | **`help`** | コマンドの一覧を表示します。 | `help` |
 | **`exit`** | デバッグコンソールを終了します。 | `exit` |

@@ -5,7 +5,7 @@
  */
 
 import { Stagehand } from "@browserbasehq/stagehand";
-import { CoreMessage, LanguageModel, generateText, generateObject } from "ai";
+import { CoreMessage, LanguageModel, generateText, generateObject, Tool } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -17,6 +17,17 @@ import { formatContext } from "./prompts/context.js";
 import { availableTools, toolRegistry } from "./tools/index.js";
 import { requestUserApproval } from "./debugConsole.js";
 import { generateAndSaveSkill } from "./skillManager.js";
+import { CustomTool } from "./types.js";
+
+function mapCustomToolsToAITools(tools: CustomTool[]): Record<string, Tool> {
+  return tools.reduce((acc, tool) => {
+    acc[tool.name] = {
+      description: tool.description,
+      parameters: tool.schema,
+    };
+    return acc;
+  }, {} as Record<string, Tool>);
+}
 
 // LLMインスタンスを生成するヘルパー関数
 export function getLlmInstance(): LanguageModel {
@@ -96,15 +107,28 @@ async function setupGlobalEventHandlers(stagehand: Stagehand, llm: LanguageModel
  * @param stagehand - Stagehandのインスタンス
  * @param state - セッション全体で共有されるエージェントの状態
  * @param originalTask - ユーザーが最初に与えた高レベルなタスク
+ * @param options - テスト環境用の設定などを含むオプション
  * @returns サブゴールの達成に成功した場合はtrue、失敗した場合はfalse
  */
 export async function taskAutomationAgent(
     subgoal: string, 
     stagehand: Stagehand,
     state: AgentState,
-    originalTask: string
+    originalTask: string,
+    options: {
+        isTestEnvironment?: boolean;
+        maxLoops?: number;
+        tools?: CustomTool[];
+        toolRegistry?: Map<string, CustomTool>;
+    } = {}
 ): Promise<boolean> {
-    const maxLoops = 15;
+    const {
+        isTestEnvironment = false,
+        maxLoops = 15,
+        tools = availableTools,
+        toolRegistry: customToolRegistry = toolRegistry
+    } = options;
+
     const llm = getLlmInstance();
 
     if (process.env.AGENT_MODE === 'vision') {
@@ -112,7 +136,7 @@ export async function taskAutomationAgent(
     }
 
     const messages: CoreMessage[] = [
-        { role: 'system', content: getBasePrompt() },
+        { role: 'system', content: getBasePrompt(isTestEnvironment) },
         { role: 'user', content: `最終目標: ${originalTask}\n現在のサブゴール: ${subgoal}` },
     ];
 
@@ -125,15 +149,14 @@ export async function taskAutomationAgent(
         const { toolCalls, text, finishReason } = await generateText({
             model: llm,
             messages: [...messages, { role: 'user', content: contextPrompt }],
-            tools: availableTools.reduce((acc, tool) => {
-                acc[tool.name] = { description: tool.description, parameters: tool.schema };
-                return acc;
-            }, {} as any),
+            tools: mapCustomToolsToAITools(tools),
         });
 
         if (finishReason === 'stop' && text) {
             console.log(`\n🎉 サブゴール完了！ AIの所感: ${text}`);
-            await generateAndSaveSkill(state.getHistory(), llm);
+            if (!isTestEnvironment) {
+                await generateAndSaveSkill(state.getHistory(), llm);
+            }
             return true;
         }
 
@@ -142,7 +165,7 @@ export async function taskAutomationAgent(
             return true;
         }
 
-        const approvedPlan = await requestUserApproval(state, toolCalls);
+        const approvedPlan = isTestEnvironment ? toolCalls : await requestUserApproval(state, toolCalls);
         if (!approvedPlan) {
             console.log("ユーザーが計画を拒否しました。サブゴールの実行を中断します。");
             return false;
@@ -152,7 +175,7 @@ export async function taskAutomationAgent(
 
         const toolResults = await Promise.all(
             approvedPlan.map(async (toolCall) => {
-                const tool = toolRegistry.get(toolCall.toolName);
+                const tool = customToolRegistry.get(toolCall.toolName);
                 if (!tool) {
                     const errorMsg = `不明なツールです: ${toolCall.toolName}`;
                     console.error(`  ❌ エラー: ${errorMsg}`);
