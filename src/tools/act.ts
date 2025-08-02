@@ -13,7 +13,11 @@ import { drawObserveOverlay, clearOverlays } from "../../utils.js";
  * `instruction`には実行したい操作を自然言語で記述します。
  */
 export const actSchema = z.object({
-  instruction: z.string().describe("実行する操作の自然言語による指示。例: '「ログイン」ボタンをクリック'"),
+  instruction: z
+    .string()
+    .describe(
+      "実行する操作の自然言語による指示。例: '「ログイン」ボタンをクリック'",
+    ),
 });
 
 /**
@@ -21,7 +25,8 @@ export const actSchema = z.object({
  */
 export const actTool = {
   name: "act",
-  description: "ページ上で特定の操作（クリック、入力、スクロールなど）を行います。",
+  description:
+    "ページ上で特定の操作（クリック、入力、スクロールなど）を行います。",
   schema: actSchema,
   /**
    * `act`ツールを実行します。
@@ -29,18 +34,22 @@ export const actTool = {
    * 操作の信頼性を高めています。
    * @param state - 現在のエージェントの状態。
    * @param args - `actSchema`に基づいた引数。
+   * @param args.instruction
    * @returns 操作の実行結果を示す文字列。
    */
-  execute: async (state: AgentState, { instruction }: z.infer<typeof actSchema>): Promise<string> => {
+  execute: async (
+    state: AgentState,
+    { instruction }: z.infer<typeof actSchema>,
+  ): Promise<string> => {
     const page = state.getActivePage();
     // まず`observe`で操作対象の要素を特定する
     const observedForAct = await page.observe(instruction);
-    
+
     if (observedForAct.length > 0) {
       // 要素が見つかった場合、ユーザーに視覚的なフィードバックを提供
       console.log("  ...操作対象をハイライト表示します。");
       await drawObserveOverlay(page, observedForAct);
-      await new Promise(resolve => setTimeout(resolve, 1500)); // ユーザーが確認するための短い待機
+      await new Promise((resolve) => setTimeout(resolve, 1500)); // ユーザーが確認するための短い待機
 
       // 最も確からしい要素に対して操作を実行
       const result = await page.act(observedForAct[0]);

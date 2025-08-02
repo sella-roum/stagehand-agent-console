@@ -200,13 +200,15 @@ export async function actWithCache(
   console.log(chalk.blue("Observe結果:"), results);
 
   if (results.length === 0) {
-    throw new Error(`キャッシュ用の要素が見つかりませんでした: "${instruction}"`);
+    throw new Error(
+      `キャッシュ用の要素が見つかりませんでした: "${instruction}"`,
+    );
   }
 
   const actionToCache = results[0];
   console.log(chalk.blue("アクションをキャッシュします:"), actionToCache);
   await simpleCache(page, instruction, actionToCache);
-  
+
   // ユーザーにどの要素が対象か視覚的にフィードバック
   await drawObserveOverlay(page, results);
   await page.waitForTimeout(1000);
@@ -223,17 +225,19 @@ export async function actWithCache(
  * @throws {Error} パスが`workspace`ディレクトリ外を指している場合にセキュリティエラーをスローします。
  */
 export function getSafePath(filename: string): string {
-    const workspaceDir = path.resolve(process.cwd(), 'workspace');
-    const intendedPath = path.resolve(workspaceDir, filename);
+  const workspaceDir = path.resolve(process.cwd(), "workspace");
+  const intendedPath = path.resolve(workspaceDir, filename);
 
-    // パスがworkspaceディレクトリ内に収まっているか検証
-    if (!intendedPath.startsWith(workspaceDir)) {
-        throw new Error(`セキュリティエラー: ディレクトリトラバーサルが検出されました。ファイル操作は 'workspace' ディレクトリ内に限定されています。`);
-    }
-    
-    // ファイルが配置されるディレクトリが存在しない場合は再帰的に作成
-    const dir = path.dirname(intendedPath);
-    fs.mkdir(dir, { recursive: true });
+  // パスがworkspaceディレクトリ内に収まっているか検証
+  if (!intendedPath.startsWith(workspaceDir)) {
+    throw new Error(
+      `セキュリティエラー: ディレクトリトラバーサルが検出されました。ファイル操作は 'workspace' ディレクトリ内に限定されています。`,
+    );
+  }
 
-    return intendedPath;
+  // ファイルが配置されるディレクトリが存在しない場合は再帰的に作成
+  const dir = path.dirname(intendedPath);
+  fs.mkdir(dir, { recursive: true });
+
+  return intendedPath;
 }

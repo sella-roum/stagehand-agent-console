@@ -1,7 +1,22 @@
 import { AgentState } from "../agentState.js";
 import { PlanStep, ReflectionResult } from "../types.js";
 
-export function getReflectionPrompt(task: string, error: Error, lastStep: PlanStep, state: AgentState, summary: string): string {
+/**
+ *
+ * @param task
+ * @param error
+ * @param lastStep
+ * @param state
+ * @param summary
+ * @returns The generated prompt string for reflection.
+ */
+export function getReflectionPrompt(
+  task: string,
+  error: Error,
+  lastStep: PlanStep,
+  state: AgentState,
+  summary: string,
+): string {
   return `
 あなたはブラウザ操作のデバッグを行うエキスパートです。
 直前のステップで以下のエラーが発生しました。原因を分析し、タスクを達成するための代替案を提案してください。
@@ -39,6 +54,11 @@ ${summary}
 `;
 }
 
+/**
+ *
+ * @param reflection
+ * @returns The formatted reflection string.
+ */
 export function formatReflection(reflection: ReflectionResult): string {
   return `
 # 直前の情報: 直前のステップでエラーが発生したため、AIによる自己反省を行いました。これを考慮して計画を修正してください。

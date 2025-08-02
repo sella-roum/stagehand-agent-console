@@ -14,7 +14,11 @@ import { CoreMessage, LanguageModel, streamText } from "ai";
  * `vision_analyze`ツールの入力スキーマ。
  */
 export const visionAnalyzeSchema = z.object({
-  question: z.string().describe("スクリーンショットについて尋ねる具体的な質問。例: '「送信」と書かれた青いボタンはどこにある？'"),
+  question: z
+    .string()
+    .describe(
+      "スクリーンショットについて尋ねる具体的な質問。例: '「送信」と書かれた青いボタンはどこにある？'",
+    ),
 });
 
 /**
@@ -22,29 +26,35 @@ export const visionAnalyzeSchema = z.object({
  */
 export const visionAnalyzeTool = {
   name: "vision_analyze",
-  description: "現在のページのスクリーンショットを撮影し、視覚的な質問に答えます。DOMベースの操作で行き詰まった場合に使用します。",
+  description:
+    "現在のページのスクリーンショットを撮影し、視覚的な質問に答えます。DOMベースの操作で行き詰まった場合に使用します。",
   schema: visionAnalyzeSchema,
   /**
    * `vision_analyze`ツールを実行します。
    * 現在のページのスクリーンショットを撮影し、Visionモデルに質問を投げかけます。
    * @param state - 現在のエージェントの状態。
    * @param args - `visionAnalyzeSchema`に基づいた引数。
+   * @param args.question
    * @param llm - Vision分析に使用する言語モデルのインスタンス。
    * @returns Visionモデルからの分析結果テキスト。
    */
-  execute: async (state: AgentState, { question }: z.infer<typeof visionAnalyzeSchema>, llm: LanguageModel): Promise<string> => {
+  execute: async (
+    state: AgentState,
+    { question }: z.infer<typeof visionAnalyzeSchema>,
+    llm: LanguageModel,
+  ): Promise<string> => {
     const page = state.getActivePage();
     const screenshotBuffer = await page.screenshot();
-    const screenshotDataUrl = `data:image/png;base64,${screenshotBuffer.toString('base64')}`;
+    const screenshotDataUrl = `data:image/png;base64,${screenshotBuffer.toString("base64")}`;
 
     console.log("  ...📸 スクリーンショットを撮影し、視覚分析中...");
 
     const visionMessages: CoreMessage[] = [
       {
-        role: 'user',
+        role: "user",
         content: [
-          { type: 'text', text: question },
-          { type: 'image', image: new URL(screenshotDataUrl) },
+          { type: "text", text: question },
+          { type: "image", image: new URL(screenshotDataUrl) },
         ],
       },
     ];
@@ -75,16 +85,25 @@ export const clickAtCoordinatesSchema = z.object({
  */
 export const clickAtCoordinatesTool = {
   name: "click_at_coordinates",
-  description: "指定されたX, Y座標をマウスでクリックします。vision_analyzeの結果を基に使用します。",
+  description:
+    "指定されたX, Y座標をマウスでクリックします。vision_analyzeの結果を基に使用します。",
   schema: clickAtCoordinatesSchema,
   /**
    * `click_at_coordinates`ツールを実行します。
    * @param state - 現在のエージェントの状態。
    * @param args - `clickAtCoordinatesSchema`に基づいた引数。
+   * @param args.x
+   * @param args.y
+   * @param args.reasoning
    * @returns クリック操作の成功メッセージ。
    */
-  execute: async (state: AgentState, { x, y, reasoning }: z.infer<typeof clickAtCoordinatesSchema>): Promise<string> => {
-    console.log(`  ...🖱️ 座標 (${x}, ${y}) をクリックします。理由: ${reasoning}`);
+  execute: async (
+    state: AgentState,
+    { x, y, reasoning }: z.infer<typeof clickAtCoordinatesSchema>,
+  ): Promise<string> => {
+    console.log(
+      `  ...🖱️ 座標 (${x}, ${y}) をクリックします。理由: ${reasoning}`,
+    );
     const page = state.getActivePage();
     await page.mouse.click(x, y);
     return `座標 (${x}, ${y}) をクリックしました。`;

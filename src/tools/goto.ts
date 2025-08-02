@@ -19,15 +19,20 @@ export const gotoSchema = z.object({
  */
 export const gotoTool = {
   name: "goto",
-  description: "指定されたURLに現在のブラウザタブを移動させます。ページのナビゲーションに使用します。",
+  description:
+    "指定されたURLに現在のブラウザタブを移動させます。ページのナビゲーションに使用します。",
   schema: gotoSchema,
   /**
    * `goto`ツールを実行します。
    * @param state - 現在のエージェントの状態。
    * @param args - `gotoSchema`に基づいた引数。
+   * @param args.url
    * @returns ページ遷移の成功メッセージ。
    */
-  execute: async (state: AgentState, { url }: z.infer<typeof gotoSchema>): Promise<string> => {
+  execute: async (
+    state: AgentState,
+    { url }: z.infer<typeof gotoSchema>,
+  ): Promise<string> => {
     const page = state.getActivePage();
     await page.goto(url);
     return `正常に ${url} に移動しました。`;

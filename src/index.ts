@@ -22,9 +22,9 @@ async function main() {
 
   // Stagehandのインスタンスを生成
   const stagehand = new Stagehand({
-      ...StagehandConfig,
-      // InspectorやAgentの動作確認のためにheadedモード（GUIあり）を推奨
-      localBrowserLaunchOptions: { headless: false },
+    ...StagehandConfig,
+    // InspectorやAgentの動作確認のためにheadedモード（GUIあり）を推奨
+    localBrowserLaunchOptions: { headless: false },
   });
 
   // Stagehandセッションを初期化し、ブラウザを起動
@@ -35,9 +35,9 @@ async function main() {
 
   // 起動時引数から介入モードを設定
   const args = process.argv.slice(2);
-  const modeArg = args.find(arg => arg.startsWith('--mode='));
+  const modeArg = args.find((arg) => arg.startsWith("--mode="));
   if (modeArg) {
-    const initialMode = modeArg.split('=')[1] as InterventionMode;
+    const initialMode = modeArg.split("=")[1] as InterventionMode;
     state.setInterventionMode(initialMode);
   }
 
@@ -49,19 +49,19 @@ async function main() {
     await interactiveDebugConsole(stagehand, state);
 
     console.log("対話型デバッグが終了しました。");
-
   } catch (error: any) {
     // 予期せぬエラーが発生した場合のフォールバック処理
     console.error(`\n❌ 致命的なエラーが発生しました: ${error.message}`);
     console.log("フォールバックとして、再度デバッグコンソールを開始します。");
-    
+
     try {
       // エラー発生時の状態からでもデバッグを試みられるようにする
       await interactiveDebugConsole(stagehand, state);
     } catch (debugError: any) {
-      console.error(`\n❌ デバッグコンソールの起動に失敗しました: ${debugError.message}`);
+      console.error(
+        `\n❌ デバッグコンソールの起動に失敗しました: ${debugError.message}`,
+      );
     }
-
   } finally {
     // 正常終了、エラー発生に関わらず、必ずセッションを閉じる
     console.log("\nセッションを終了します。");

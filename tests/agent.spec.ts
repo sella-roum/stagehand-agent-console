@@ -18,12 +18,12 @@ test.describe("Stagehand AI Agent", () => {
   // 各テストの実行前に、新しいStagehandインスタンスを初期化する
   test.beforeEach(async () => {
     // CI/CD環境で実行されることを想定し、環境変数NODE_ENVを'test'に設定
-    process.env.NODE_ENV = 'test';
-    
+    process.env.NODE_ENV = "test";
+
     stagehand = new Stagehand({
       ...StagehandConfig,
       // テスト中はGUIを表示しないヘッドレスモードでブラウザを実行
-      localBrowserLaunchOptions: { headless: true }, 
+      localBrowserLaunchOptions: { headless: true },
     });
     await stagehand.init();
   });
@@ -39,11 +39,12 @@ test.describe("Stagehand AI Agent", () => {
    */
   test("should navigate to Stagehand GitHub and find the star count", async () => {
     // 1. エージェントに与える高レベルなタスクを定義
-    const task = "https://www.stagehand.dev/ にアクセスして、ページ内にあるGithubリンクへアクセスし、そのリポジトリのスターの数を教えて";
-    
+    const task =
+      "https://www.stagehand.dev/ にアクセスして、ページ内にあるGithubリンクへアクセスし、そのリポジトリのスターの数を教えて";
+
     // 2. 非対話モードでエージェントのタスク実行を開始
     const result = await runAgentTask(task, stagehand, {
-      maxSubgoals: 5,       // 計画の最大ステップ数を制限
+      maxSubgoals: 5, // 計画の最大ステップ数を制限
       maxLoopsPerSubgoal: 8, // 各ステップの最大試行回数を制限
     });
 
@@ -65,9 +66,11 @@ test.describe("Stagehand AI Agent", () => {
     const impossibleTask = "月に行ってチーズがあるか確認してきて";
 
     // 実行不可能なタスクは、最終的にエラーで終了することを期待する
-    await expect(runAgentTask(impossibleTask, stagehand, {
+    await expect(
+      runAgentTask(impossibleTask, stagehand, {
         maxSubgoals: 3,
         maxLoopsPerSubgoal: 3,
-    })).rejects.toThrow();
+      }),
+    ).rejects.toThrow();
   });
 });

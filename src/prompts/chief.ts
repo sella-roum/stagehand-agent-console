@@ -9,8 +9,14 @@ import { z } from "zod";
  * `subgoals`と`reasoning`の2つのフィールドを持つJSONオブジェクトを期待します。
  */
 export const chiefAgentSchema = z.object({
-  subgoals: z.array(z.string()).describe("タスクを達成するための具体的で実行可能なサブゴールのリスト。5〜10個のステップが望ましい。"),
-  reasoning: z.string().describe("なぜこれらのサブゴールに分解したかの簡潔な理由。"),
+  subgoals: z
+    .array(z.string())
+    .describe(
+      "タスクを達成するための具体的で実行可能なサブゴールのリスト。5〜10個のステップが望ましい。",
+    ),
+  reasoning: z
+    .string()
+    .describe("なぜこれらのサブゴールに分解したかの簡潔な理由。"),
 });
 
 /**

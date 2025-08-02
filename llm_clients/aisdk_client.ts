@@ -36,15 +36,29 @@ import {
 } from "@browserbasehq/stagehand";
 import { ChatCompletion } from "openai/resources";
 
+/**
+ *
+ */
 export class AISdkClient extends LLMClient {
   public type = "aisdk" as const;
   private model: LanguageModel;
 
+  /**
+   *
+   * @param root0
+   * @param root0.model
+   */
   constructor({ model }: { model: LanguageModel }) {
     super(model.modelId as AvailableModel);
     this.model = model;
   }
 
+  /**
+   *
+   * @param root0
+   * @param root0.options
+   * @returns A promise that resolves to the chat completion result.
+   */
   async createChatCompletion<T = ChatCompletion>({
     options,
   }: CreateChatCompletionOptions): Promise<T> {

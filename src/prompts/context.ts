@@ -1,6 +1,15 @@
 import { AgentState } from "../agentState.js";
 
-export async function formatContext(state: AgentState, summary: string): Promise<string> {
+/**
+ *
+ * @param state
+ * @param summary
+ * @returns A promise that resolves to the formatted context string.
+ */
+export async function formatContext(
+  state: AgentState,
+  summary: string,
+): Promise<string> {
   const tabInfo = await state.getTabInfo();
   return `
 # 現在の状況

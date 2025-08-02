@@ -12,6 +12,6 @@
     "allowImportingTsExtensions": false,
     "noEmit": false
   },
-  "include": ["*.ts", "api", "examples/run.ts", "src/debugConsole.ts", "src/index.ts", "src/taskAutomationAgent.ts"],
+  "include": ["src/**/*.ts", "llm_clients/**/*.ts", "tests/**/*.ts", "*.ts"],
   "exclude": ["node_modules", "dist"]
 }

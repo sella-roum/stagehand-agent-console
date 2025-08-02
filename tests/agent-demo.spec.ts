@@ -44,15 +44,16 @@ test.describe("Stagehand AI Agent", () => {
 
     // --- ステップ2: AIエージェントへのタスクの引き継ぎ ---
     // 検索結果ページという動的な状態から、後続の探索・操作をAIに任せる
-    const task = "Stagehandの公式サイトを見つけてアクセスし、GitHubリポジトリのスター数を報告して";
-    
+    const task =
+      "Stagehandの公式サイトを見つけてアクセスし、GitHubリポジトリのスター数を報告して";
+
     const result = await runAgentTask(task, stagehand);
 
     // --- ステップ3: エージェントの実行結果の検証 ---
     // エージェントがタスクを成功したと自己評価しているか
     expect(result.is_success).toBe(true);
     // 最終回答に'star'という単語が含まれているか（緩い検証）
-    expect.soft(result.reasoning.toLowerCase()).toContain('star');
+    expect.soft(result.reasoning.toLowerCase()).toContain("star");
     // 最終回答に何らかの数字（スター数）が含まれているか
     expect(result.reasoning).toMatch(/\d+/);
 

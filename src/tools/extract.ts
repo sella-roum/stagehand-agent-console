@@ -11,7 +11,12 @@ import { AgentState } from "../agentState.js";
  * `extract`ツールの入力スキーマ。
  */
 export const extractSchema = z.object({
-  instruction: z.string().nullable().describe("抽出したい内容の指示。例: '記事のタイトル'。引数がない場合はページ全体のテキストを抽出します。"),
+  instruction: z
+    .string()
+    .nullable()
+    .describe(
+      "抽出したい内容の指示。例: '記事のタイトル'。引数がない場合はページ全体のテキストを抽出します。",
+    ),
 });
 
 /**
@@ -26,9 +31,13 @@ export const extractTool = {
    * 指示があればその内容を、なければページ全体のテキストを抽出します。
    * @param state - 現在のエージェントの状態。
    * @param args - `extractSchema`に基づいた引数。
+   * @param args.instruction
    * @returns 抽出された情報。
    */
-  execute: async (state: AgentState, { instruction }: z.infer<typeof extractSchema>): Promise<any> => {
+  execute: async (
+    state: AgentState,
+    { instruction }: z.infer<typeof extractSchema>,
+  ): Promise<any> => {
     const page = state.getActivePage();
     if (instruction) {
       return await page.extract(instruction);

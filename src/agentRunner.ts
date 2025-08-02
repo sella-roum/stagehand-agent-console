@@ -12,8 +12,12 @@ import { availableTools } from "./tools/index.js";
 import { AgentExecutionResult, CustomTool } from "./types.js";
 
 // テスト環境ではユーザーへの問い合わせができないため、`ask_user`ツールを無効化する
-const testSafeTools: CustomTool[] = availableTools.filter(t => t.name !== 'ask_user');
-const testSafeToolRegistry = new Map<string, CustomTool>(testSafeTools.map(t => [t.name, t]));
+const testSafeTools: CustomTool[] = availableTools.filter(
+  (t) => t.name !== "ask_user",
+);
+const testSafeToolRegistry = new Map<string, CustomTool>(
+  testSafeTools.map((t) => [t.name, t]),
+);
 
 /**
  * エージェントの実行設定を定義するインターフェース。
@@ -29,7 +33,6 @@ export interface AgentTaskConfig {
  * 非対話モードでAIエージェントのタスクを実行します。
  * この関数は、Playwrightのテストケース内など、ユーザーの介入なしで
  * エージェントの動作を検証する目的で使用されます。
- *
  * @param task - ユーザーが与える高レベルなタスク文字列。
  * @param stagehand - 初期化済みのStagehandインスタンス。
  * @param config - エージェントの実行に関する設定オプション。
@@ -39,7 +42,7 @@ export interface AgentTaskConfig {
 export async function runAgentTask(
   task: string,
   stagehand: Stagehand,
-  config: AgentTaskConfig = {}
+  config: AgentTaskConfig = {},
 ): Promise<AgentExecutionResult> {
   const { maxSubgoals = 10, maxLoopsPerSubgoal = 15 } = config;
   const state = new AgentState(stagehand);
@@ -50,25 +53,23 @@ export async function runAgentTask(
   const subgoals = await planSubgoals(task, llm);
   if (subgoals.length > maxSubgoals) {
     // 無限ループや意図しない長時間の実行を防ぐためのガードレール
-    throw new Error(`計画されたサブゴールが多すぎます: ${subgoals.length} > ${maxSubgoals}`);
+    throw new Error(
+      `計画されたサブゴールが多すぎます: ${subgoals.length} > ${maxSubgoals}`,
+    );
   }
 
   // 2. 各サブゴールの逐次実行
   for (const [index, subgoal] of subgoals.entries()) {
-    console.log(`\n▶️ サブゴール ${index + 1}/${subgoals.length} 実行中: "${subgoal}"`);
-    
-    const success = await taskAutomationAgent(
-      subgoal,
-      stagehand,
-      state,
-      task,
-      { 
-        isTestEnvironment: true, // 非対話モードであることを実行エージェントに伝える
-        maxLoops: maxLoopsPerSubgoal,
-        tools: testSafeTools, // `ask_user`を除外したツールセットを使用
-        toolRegistry: testSafeToolRegistry,
-      }
+    console.log(
+      `\n▶️ サブゴール ${index + 1}/${subgoals.length} 実行中: "${subgoal}"`,
     );
+
+    const success = await taskAutomationAgent(subgoal, stagehand, state, task, {
+      isTestEnvironment: true, // 非対話モードであることを実行エージェントに伝える
+      maxLoops: maxLoopsPerSubgoal,
+      tools: testSafeTools, // `ask_user`を除外したツールセットを使用
+      toolRegistry: testSafeToolRegistry,
+    });
 
     if (!success) {
       // サブゴールのいずれかが失敗した場合、タスク全体を失敗とみなし、即座にエラーをスローする
@@ -79,11 +80,20 @@ export async function runAgentTask(
   // 3. 最終結果の検証と返却
   const finalHistory = state.getHistory();
   // `finish`ツールが正常に呼び出され、自己評価が完了したかを確認
-  const finishRecord = finalHistory.find(h => h.toolCall.toolName === 'finish');
-  if (finishRecord && typeof finishRecord.result === 'string' && finishRecord.result.startsWith('SELF_EVALUATION_COMPLETE:')) {
+  const finishRecord = finalHistory.find(
+    (h) => h.toolCall.toolName === "finish",
+  );
+  if (
+    finishRecord &&
+    typeof finishRecord.result === "string" &&
+    finishRecord.result.startsWith("SELF_EVALUATION_COMPLETE:")
+  ) {
     console.log("✅ 全てのサブゴールの処理が完了しました。");
     // `SELF_EVALUATION_COMPLETE: { ... }` という文字列からJSON部分を抽出してパースする
-    const resultJson = finishRecord.result.replace('SELF_EVALUATION_COMPLETE: ', '');
+    const resultJson = finishRecord.result.replace(
+      "SELF_EVALUATION_COMPLETE: ",
+      "",
+    );
     return JSON.parse(resultJson);
   } else {
     // `finish`ツールが呼ばれずにループが終了した場合、タスクは未完了とみなす

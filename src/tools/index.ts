@@ -23,7 +23,7 @@ import { CustomTool } from "../types.js";
  * @description 静的に定義された、エージェントの基本的なツールセット。
  * アプリケーション起動時に動的スキルが追加される前の初期状態です。
  */
-export let availableTools: CustomTool[] = [
+export const availableTools: CustomTool[] = [
   gotoTool,
   actTool,
   cachedActTool,
@@ -46,7 +46,7 @@ export let availableTools: CustomTool[] = [
  * `availableTools`配列から生成されます。
  */
 export let toolRegistry = new Map<string, CustomTool>(
-  availableTools.map(tool => [tool.name, tool])
+  availableTools.map((tool) => [tool.name, tool]),
 );
 
 /**
@@ -56,13 +56,15 @@ export let toolRegistry = new Map<string, CustomTool>(
  */
 export async function initializeTools() {
   const dynamicSkills = await loadSkills();
-  
+
   dynamicSkills.forEach((skill, name) => {
     const skillTool: CustomTool = {
       name: name,
       description: skill.description,
       // スキルに渡す引数を汎用的に受け入れるためのスキーマ
-      schema: z.object({ args: z.any().describe("スキルに渡す引数（JSONオブジェクト形式）") }),
+      schema: z.object({
+        args: z.any().describe("スキルに渡す引数（JSONオブジェクト形式）"),
+      }),
       // スキルモジュールのexecute関数を呼び出すラッパー関数
       execute: (state: any, { args }: any) => skill.execute(state, args),
     };
@@ -71,6 +73,6 @@ export async function initializeTools() {
 
   // 新しいツールセットでtoolRegistryを再構築
   toolRegistry = new Map<string, CustomTool>(
-    availableTools.map(tool => [tool.name, tool])
+    availableTools.map((tool) => [tool.name, tool]),
   );
 }

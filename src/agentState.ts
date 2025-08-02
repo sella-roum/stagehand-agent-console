@@ -18,11 +18,11 @@ export class AgentState {
   // 現在開いているページのリストを保持するプライベートプロパティ
   private pages: Page[] = [];
   // Stagehandのインスタンス
-  private stagehand: Stagehand; 
+  private stagehand: Stagehand;
   // ブラウザのコンテキスト
   private context: BrowserContext;
   // ユーザーの介入モード
-  private interventionMode: InterventionMode = 'confirm'; // デフォルトは確認モード
+  private interventionMode: InterventionMode = "confirm"; // デフォルトは確認モード
 
   /**
    * AgentStateの新しいインスタンスを生成します。
@@ -56,11 +56,13 @@ export class AgentState {
    * @param mode - 設定する介入モード ('autonomous', 'confirm', 'edit')。
    */
   public setInterventionMode(mode: InterventionMode): void {
-    if (['autonomous', 'confirm', 'edit'].includes(mode)) {
+    if (["autonomous", "confirm", "edit"].includes(mode)) {
       this.interventionMode = mode;
       console.log(`✅ 介入モードが '${mode}' に設定されました。`);
     } else {
-      console.error(`❌ 無効なモードです: ${mode}。'autonomous', 'confirm', 'edit' のいずれかを指定してください。`);
+      console.error(
+        `❌ 無効なモードです: ${mode}。'autonomous', 'confirm', 'edit' のいずれかを指定してください。`,
+      );
     }
   }
 
@@ -98,7 +100,9 @@ export class AgentState {
    */
   getPageAtIndex(index: number): Page {
     if (index < 0 || index >= this.pages.length) {
-      throw new Error(`無効なタブインデックスです: ${index}。利用可能なインデックスは 0 から ${this.pages.length - 1} です。`);
+      throw new Error(
+        `無効なタブインデックスです: ${index}。利用可能なインデックスは 0 から ${this.pages.length - 1} です。`,
+      );
     }
     return this.pages[index];
   }
@@ -113,7 +117,9 @@ export class AgentState {
     return Promise.all(
       this.pages.map(async (p, index) => ({
         index,
-        title: p.isClosed() ? "[Closed]" : await p.title().catch(() => "[Error]"),
+        title: p.isClosed()
+          ? "[Closed]"
+          : await p.title().catch(() => "[Error]"),
         url: p.isClosed() ? "[Closed]" : p.url(),
         isActive: !p.isClosed() && p.url() === activePage.url(),
       })),

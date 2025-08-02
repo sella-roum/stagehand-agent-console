@@ -26,9 +26,13 @@ export const newTabTool = {
    * `new_tab`ツールを実行します。
    * @param state - 現在のエージェントの状態。
    * @param args - `newTabSchema`に基づいた引数。
+   * @param args.url
    * @returns 新しいタブの作成成功メッセージ。
    */
-  execute: async (state: AgentState, { url }: z.infer<typeof newTabSchema>): Promise<string> => {
+  execute: async (
+    state: AgentState,
+    { url }: z.infer<typeof newTabSchema>,
+  ): Promise<string> => {
     const page = state.getActivePage();
     const newPage = await page.context().newPage();
     await newPage.goto(url);
@@ -58,9 +62,13 @@ export const switchTabTool = {
    * `switch_tab`ツールを実行します。
    * @param state - 現在のエージェントの状態。
    * @param args - `switchTabSchema`に基づいた引数。
+   * @param args.tabIndex
    * @returns タブの切り替え成功メッセージ。
    */
-  execute: async (state: AgentState, { tabIndex }: z.infer<typeof switchTabSchema>): Promise<string> => {
+  execute: async (
+    state: AgentState,
+    { tabIndex }: z.infer<typeof switchTabSchema>,
+  ): Promise<string> => {
     const targetPage = state.getPageAtIndex(tabIndex);
     await targetPage.bringToFront();
     // アクティブなタブが変更されたので、AgentStateの状態を更新する
@@ -89,9 +97,13 @@ export const closeTabTool = {
    * `close_tab`ツールを実行します。
    * @param state - 現在のエージェントの状態。
    * @param args - `closeTabSchema`に基づいた引数。
+   * @param args.tabIndex
    * @returns タブを閉じた後の成功メッセージ。
    */
-  execute: async (state: AgentState, { tabIndex }: z.infer<typeof closeTabSchema>): Promise<string> => {
+  execute: async (
+    state: AgentState,
+    { tabIndex }: z.infer<typeof closeTabSchema>,
+  ): Promise<string> => {
     const pageToClose = state.getPageAtIndex(tabIndex);
     if (pageToClose && !pageToClose.isClosed()) {
       await pageToClose.close();

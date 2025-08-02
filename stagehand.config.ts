@@ -11,35 +11,35 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // 環境変数から使用するLLMプロバイダを選択 (デフォルトは'google')
-const LLM_PROVIDER = process.env.LLM_PROVIDER || 'google';
+const LLM_PROVIDER = process.env.LLM_PROVIDER || "google";
 
 let modelName: string;
-let modelClientOptions: { 
+let modelClientOptions: {
   apiKey?: string;
   baseURL?: string;
   headers?: Record<string, string>;
 };
 
 // プロバイダに応じてモデル名とクライアントオプションを動的に設定
-if (LLM_PROVIDER === 'groq') {
+if (LLM_PROVIDER === "groq") {
   console.log("🚀 Using Groq Cloud API");
-  modelName = `groq/${process.env.GROQ_MODEL || ''}`; // デフォルトモデルを更新
+  modelName = `groq/${process.env.GROQ_MODEL || ""}`; // デフォルトモデルを更新
   modelClientOptions = { apiKey: process.env.GROQ_API_KEY };
-} else if (LLM_PROVIDER === 'openrouter') {
+} else if (LLM_PROVIDER === "openrouter") {
   console.log("🚀 Using OpenRouter API");
-  modelName = `${process.env.OPENROUTER_MODEL || ''}`; // デフォルトモデルを設定
-  modelClientOptions = { 
+  modelName = `${process.env.OPENROUTER_MODEL || ""}`; // デフォルトモデルを設定
+  modelClientOptions = {
     apiKey: process.env.OPENROUTER_API_KEY,
     baseURL: "https://openrouter.ai/api/v1",
     // OpenRouterの利用規約に基づき、識別用のヘッダーを追加
     headers: {
-      'HTTP-Referer': 'http://localhost:3000', // 開発元を示すURL
-      'X-Title': 'Stagehand Agent Console',    // プロジェクト名
-    }
+      "HTTP-Referer": "http://localhost:3000", // 開発元を示すURL
+      "X-Title": "Stagehand Agent Console", // プロジェクト名
+    },
   };
 } else {
   console.log("🚀 Using Google Gemini API");
-  modelName = `google/${process.env.GEMINI_MODEL || ''}`; // デフォルトモデルを更新
+  modelName = `google/${process.env.GEMINI_MODEL || ""}`; // デフォルトモデルを更新
   modelClientOptions = { apiKey: process.env.GOOGLE_API_KEY };
 }
 

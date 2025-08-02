@@ -29,6 +29,12 @@ import type {
 } from "openai/resources/chat/completions";
 import { z } from "zod";
 
+/**
+ *
+ * @param schema
+ * @param data
+ * @returns
+ */
 function validateZodSchema(schema: z.ZodTypeAny, data: unknown) {
   try {
     schema.parse(data);
@@ -38,16 +44,33 @@ function validateZodSchema(schema: z.ZodTypeAny, data: unknown) {
   }
 }
 
+/**
+ *
+ */
 export class CustomOpenAIClient extends LLMClient {
   public type = "openai" as const;
   private client: OpenAI;
 
+  /**
+   *
+   * @param root0
+   * @param root0.modelName
+   * @param root0.client
+   */
   constructor({ modelName, client }: { modelName: string; client: OpenAI }) {
     super(modelName as AvailableModel);
     this.client = client;
     this.modelName = modelName as AvailableModel;
   }
 
+  /**
+   *
+   * @param root0
+   * @param root0.options
+   * @param root0.retries
+   * @param root0.logger
+   * @returns A promise that resolves to the chat completion result.
+   */
   async createChatCompletion<T = ChatCompletion>({
     options,
     retries = 3,
@@ -121,14 +144,14 @@ export class CustomOpenAIClient extends LLMClient {
             if ("image_url" in content) {
               const imageContent: ChatCompletionContentPartImage = {
                 image_url: {
-                  url: content.image_url.url,
+                  url: content?.image_url?.url || "",
                 },
                 type: "image_url",
               };
               return imageContent;
             } else {
               const textContent: ChatCompletionContentPartText = {
-                text: content.text,
+                text: content.text || "",
                 type: "text",
               };
               return textContent;
@@ -201,7 +224,7 @@ export class CustomOpenAIClient extends LLMClient {
           type: "object",
         },
         requestId: {
-          value: requestId,
+          value: requestId || "",
           type: "string",
         },
       },

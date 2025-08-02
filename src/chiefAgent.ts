@@ -12,13 +12,15 @@ import fs from "fs/promises";
 /**
  * 司令塔エージェントとして、高レベルなタスクをサブゴールのリストに分解します。
  * 生成された計画はコンソールに表示され、`workspace/plan.json`に保存されます。
- *
  * @param task - ユーザーから与えられた高レベルなタスク文字列。
  * @param llm - 計画生成に使用する言語モデルのインスタンス。
  * @returns サブゴールの文字列を含む配列。
  * @throws {Error} LLMからの応答がスキーマに準拠していない場合にエラーが発生する可能性があります。
  */
-export async function planSubgoals(task: string, llm: LanguageModel): Promise<string[]> {
+export async function planSubgoals(
+  task: string,
+  llm: LanguageModel,
+): Promise<string[]> {
   console.log("👑 司令塔エージェントがタスク計画を開始...");
   const prompt = getChiefAgentPrompt(task);
 
@@ -45,7 +47,6 @@ export async function planSubgoals(task: string, llm: LanguageModel): Promise<st
     // ファイル保存は補助的な機能のため、失敗しても処理は続行する
     console.warn(`警告: 計画ファイルの保存に失敗しました。理由: ${e.message}`);
   }
-
 
   return plan.subgoals;
 }

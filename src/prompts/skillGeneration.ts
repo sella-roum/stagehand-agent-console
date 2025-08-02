@@ -1,21 +1,50 @@
 import { z } from "zod";
 
 export const skillGenerationSchema = z.object({
-  should_generate_skill: z.boolean().describe("一連の操作が、既存のスキルでは達成できない新しい汎用的なスキルとして抽象化する価値がある場合はtrue。"),
-  skill_name: z.string().nullable().describe("キャメルケースのスキル名。例: 'loginToGitHub'"),
-  skill_description: z.string().nullable().describe("このスキルが何をするかの簡潔な説明。"),
-  skill_code: z.string().nullable().describe("引数を受け取れるTypeScriptの非同期関数としてのスキルコード。`state: AgentState`を第一引数に、`args`オブジェクトを第二引数に取ること。"),
-  reasoning: z.string().describe("スキルを生成すべきかどうかの判断理由。既存スキルで代用できる場合は、そのスキル名を挙げて説明すること。"),
+  should_generate_skill: z
+    .boolean()
+    .describe(
+      "一連の操作が、既存のスキルでは達成できない新しい汎用的なスキルとして抽象化する価値がある場合はtrue。",
+    ),
+  skill_name: z
+    .string()
+    .nullable()
+    .describe("キャメルケースのスキル名。例: 'loginToGitHub'"),
+  skill_description: z
+    .string()
+    .nullable()
+    .describe("このスキルが何をするかの簡潔な説明。"),
+  skill_code: z
+    .string()
+    .nullable()
+    .describe(
+      "引数を受け取れるTypeScriptの非同期関数としてのスキルコード。`state: AgentState`を第一引数に、`args`オブジェクトを第二引数に取ること。",
+    ),
+  reasoning: z
+    .string()
+    .describe(
+      "スキルを生成すべきかどうかの判断理由。既存スキルで代用できる場合は、そのスキル名を挙げて説明すること。",
+    ),
 });
 
-export function getSkillGenerationPrompt(history: string, existingSkills: { name: string; description: string }[]): string {
-  const existingSkillsText = existingSkills.length > 0
-    ? `
+/**
+ *
+ * @param history
+ * @param existingSkills
+ * @returns The generated prompt string for skill generation.
+ */
+export function getSkillGenerationPrompt(
+  history: string,
+  existingSkills: { name: string; description: string }[],
+): string {
+  const existingSkillsText =
+    existingSkills.length > 0
+      ? `
 # 既存のスキル一覧
 以下は現在利用可能なスキルです。新しいスキルを生成する前に、これらのスキルで目的を達成できないか必ず確認してください。
-${existingSkills.map(s => `- ${s.name}: ${s.description}`).join('\n')}
+${existingSkills.map((s) => `- ${s.name}: ${s.description}`).join("\n")}
 `
-    : "# 既存のスキル一覧\n現在、利用可能なスキルはありません。";
+      : "# 既存のスキル一覧\n現在、利用可能なスキルはありません。";
 
   return `
 あなたは、AIエージェントの行動履歴を分析し、再利用可能なスキルを抽出する専門家です。

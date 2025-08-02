@@ -1,11 +1,30 @@
 import { z } from "zod";
 
 export const evaluationSchema = z.object({
-  is_success: z.boolean().describe("エージェントが初期タスクを完全に達成できた場合はtrue、そうでない場合はfalse。"),
-  reasoning: z.string().describe("評価の根拠を簡潔に説明してください。成功した場合はその要約を、失敗した場合は何が不足していたかを記述します。"),
+  is_success: z
+    .boolean()
+    .describe(
+      "エージェントが初期タスクを完全に達成できた場合はtrue、そうでない場合はfalse。",
+    ),
+  reasoning: z
+    .string()
+    .describe(
+      "評価の根拠を簡潔に説明してください。成功した場合はその要約を、失敗した場合は何が不足していたかを記述します。",
+    ),
 });
 
-export function getEvaluationPrompt(initialTask: string, agentFinalAnswer: string, historySummary: string): string {
+/**
+ *
+ * @param initialTask
+ * @param agentFinalAnswer
+ * @param historySummary
+ * @returns The generated prompt string for evaluation.
+ */
+export function getEvaluationPrompt(
+  initialTask: string,
+  agentFinalAnswer: string,
+  historySummary: string,
+): string {
   return `
 # あなたの役割
 あなたは、AIエージェントのタスク達成度を評価する厳格な評価者です。
