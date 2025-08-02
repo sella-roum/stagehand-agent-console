@@ -1,10 +1,23 @@
+/**
+ * @file 司令塔エージェント(Chief Agent)がタスク計画を立てるためのプロンプトとスキーマを定義します。
+ */
+
 import { z } from "zod";
 
+/**
+ * 司令塔エージェントの出力形式を定義するZodスキーマ。
+ * `subgoals`と`reasoning`の2つのフィールドを持つJSONオブジェクトを期待します。
+ */
 export const chiefAgentSchema = z.object({
   subgoals: z.array(z.string()).describe("タスクを達成するための具体的で実行可能なサブゴールのリスト。5〜10個のステップが望ましい。"),
   reasoning: z.string().describe("なぜこれらのサブゴールに分解したかの簡潔な理由。"),
 });
 
+/**
+ * 司令塔エージェントに与えるプロンプトを生成します。
+ * @param task - ユーザーから与えられた高レベルなタスク文字列。
+ * @returns LLMに渡すためのプロンプト文字列。
+ */
 export function getChiefAgentPrompt(task: string): string {
   return `
 あなたは優秀なAIプロジェクトマネージャーです。あなたの役割は、ユーザーから与えられた曖昧で高レベルなタスクを受け取り、それを実行可能な一連の具体的なサブゴールに分解することです。

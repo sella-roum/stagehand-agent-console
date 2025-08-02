@@ -1,13 +1,33 @@
+/**
+ * @file エージェントの状態管理機能を提供します。
+ * このファイルでは、セッション全体で共有される状態（実行履歴、タブ情報、介入モードなど）を
+ * 一元的に管理する `AgentState` クラスを定義しています。
+ */
+
 import { Page, BrowserContext, Stagehand } from "@browserbasehq/stagehand";
 import { ExecutionRecord, TabInfo, InterventionMode } from "./types.js";
 
+/**
+ * エージェントのセッション全体の状態を管理するクラス。
+ * エージェントの「記憶」として機能し、実行履歴、開いているタブ、
+ * 現在の介入モードなどを保持します。
+ */
 export class AgentState {
+  // 実行履歴を保持するプライベートプロパティ
   private history: ExecutionRecord[] = [];
+  // 現在開いているページのリストを保持するプライベートプロパティ
   private pages: Page[] = [];
+  // Stagehandのインスタンス
   private stagehand: Stagehand; 
+  // ブラウザのコンテキスト
   private context: BrowserContext;
-  private interventionMode: InterventionMode = 'confirm'; // デフォルト値を設定
+  // ユーザーの介入モード
+  private interventionMode: InterventionMode = 'confirm'; // デフォルトは確認モード
 
+  /**
+   * AgentStateの新しいインスタンスを生成します。
+   * @param stagehandInstance - 初期化済みのStagehandインスタンス。
+   */
   constructor(stagehandInstance: Stagehand) {
     this.stagehand = stagehandInstance;
     this.context = stagehandInstance.page.context();
@@ -16,23 +36,24 @@ export class AgentState {
 
   /**
    * 実行履歴に新しいレコードを追加します。
-   * @param record - 追加する実行レコード
+   * @param record - 追加する実行レコード。
    */
   addHistory(record: ExecutionRecord): void {
     this.history.push(record);
   }
 
   /**
-   * 現在の実行履歴を取得します。
-   * @returns 実行レコードの配列
+   * 現在の実行履歴の完全なリストを取得します。
+   * @returns 実行レコードの配列。
    */
   getHistory(): ExecutionRecord[] {
     return this.history;
   }
 
   /**
-   * 介入モードを設定します。
-   * @param mode - 設定する介入モード
+   * ユーザーの介入モードを設定します。
+   * モードによって、AIの自律レベルが変化します。
+   * @param mode - 設定する介入モード ('autonomous', 'confirm', 'edit')。
    */
   public setInterventionMode(mode: InterventionMode): void {
     if (['autonomous', 'confirm', 'edit'].includes(mode)) {
@@ -45,23 +66,24 @@ export class AgentState {
 
   /**
    * 現在の介入モードを取得します。
-   * @returns 現在の介入モード
+   * @returns 現在の介入モード。
    */
   public getInterventionMode(): InterventionMode {
     return this.interventionMode;
   }
 
   /**
-   * 現在のブラウザコンテキストからページリストを更新します。
+   * 現在のブラウザコンテキストからページリストを最新の状態に更新します。
+   * 新しいタブが開かれたり、タブが閉じられた際に呼び出されることを想定しています。
    */
   async updatePages(): Promise<void> {
     this.pages = this.context.pages() as Page[];
   }
 
   /**
-   * 現在アクティブなページオブジェクトを返します。
-   * このオブジェクトはStagehandによって拡張されたメソッドを持ちます。
-   * @returns StagehandのPageプロキシオブジェクト
+   * 現在アクティブな（ユーザーが見ている）ページオブジェクトを返します。
+   * このオブジェクトはStagehandによって拡張されたメソッド（act, extractなど）を持ちます。
+   * @returns StagehandのPageプロキシオブジェクト。
    */
   getActivePage(): Page {
     // Stagehandの設計上、stagehand.pageが常にアクティブなタブを指すため、これを信頼する。
@@ -70,8 +92,9 @@ export class AgentState {
 
   /**
    * 指定されたインデックスのページオブジェクトを取得します。
-   * @param index - ページのインデックス
-   * @returns PlaywrightのPageオブジェクト
+   * @param index - 取得したいページのインデックス番号。
+   * @returns Stagehandによって拡張されたPageオブジェクト。
+   * @throws {Error} 指定されたインデックスが無効な場合にエラーをスローします。
    */
   getPageAtIndex(index: number): Page {
     if (index < 0 || index >= this.pages.length) {
@@ -82,7 +105,7 @@ export class AgentState {
 
   /**
    * 現在開いているすべてのタブの情報を取得します。
-   * @returns タブ情報の配列
+   * @returns 各タブの情報（インデックス、タイトル、URL、アクティブ状態）を含む配列。
    */
   async getTabInfo(): Promise<TabInfo[]> {
     await this.updatePages();

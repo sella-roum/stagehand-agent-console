@@ -1,3 +1,7 @@
+/**
+ * @file プロジェクト全体で利用される汎用的なユーティリティ関数を提供します。
+ */
+
 import { ObserveResult, Page } from "@browserbasehq/stagehand";
 import boxen from "boxen";
 import chalk from "chalk";
@@ -5,6 +9,11 @@ import fs from "fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
+/**
+ * コンソールに目立つ枠線付きのメッセージを表示します。
+ * @param message - 表示するメッセージ本文。
+ * @param title - (オプション) 枠の上部に表示するタイトル。
+ */
 export function announce(message: string, title?: string) {
   console.log(
     boxen(message, {
@@ -16,9 +25,11 @@ export function announce(message: string, title?: string) {
 }
 
 /**
- * Get an environment variable and throw an error if it's not found
- * @param name - The name of the environment variable
- * @returns The value of the environment variable
+ * 環境変数を取得します。必須の変数が設定されていない場合はエラーをスローします。
+ * @param name - 取得する環境変数の名前。
+ * @param required - (オプション) この変数が必須かどうか。デフォルトはtrue。
+ * @returns 環境変数の値。必須でない場合はundefinedの可能性があります。
+ * @throws {Error} 必須の環境変数が設定されていない場合にエラーをスローします。
  */
 export function getEnvVar(name: string, required = true): string | undefined {
   const value = process.env[name];
@@ -29,10 +40,10 @@ export function getEnvVar(name: string, required = true): string | undefined {
 }
 
 /**
- * Validate a Zod schema against some data
- * @param schema - The Zod schema to validate against
- * @param data - The data to validate
- * @returns Whether the data is valid against the schema
+ * 与えられたデータがZodスキーマに準拠しているか検証します。
+ * @param schema - 検証に使用するZodスキーマ。
+ * @param data - 検証対象のデータ。
+ * @returns データがスキーマに準拠していればtrue、そうでなければfalse。
  */
 export function validateZodSchema(schema: z.ZodTypeAny, data: unknown) {
   try {
@@ -43,11 +54,14 @@ export function validateZodSchema(schema: z.ZodTypeAny, data: unknown) {
   }
 }
 
+/**
+ * `observe`の結果に基づき、ページ上の該当要素に視覚的なオーバーレイを描画します。
+ * デバッグやユーザーへのフィードバックに利用します。
+ * @param page - 操作対象のStagehand Pageオブジェクト。
+ * @param results - `observe`コマンドから返された結果の配列。
+ */
 export async function drawObserveOverlay(page: Page, results: ObserveResult[]) {
-  // Convert single xpath to array for consistent handling
   const xpathList = results.map((result) => result.selector);
-
-  // Filter out empty xpaths
   const validXpaths = xpathList.filter((xpath) => xpath !== "xpath=");
 
   await page.evaluate((selectors) => {
@@ -84,59 +98,69 @@ export async function drawObserveOverlay(page: Page, results: ObserveResult[]) {
   }, validXpaths);
 }
 
+/**
+ * `drawObserveOverlay`によって描画されたすべてのオーバーレイをページから削除します。
+ * @param page - 操作対象のStagehand Pageオブジェクト。
+ */
 export async function clearOverlays(page: Page) {
-  // remove existing stagehandObserve attributes
   await page.evaluate(() => {
     const elements = document.querySelectorAll('[stagehandObserve="true"]');
     elements.forEach((el) => {
-      const parent = el.parentNode;
-      while (el.firstChild) {
-        parent?.insertBefore(el.firstChild, el);
-      }
-      parent?.removeChild(el);
+      el.parentNode?.removeChild(el);
     });
   });
 }
 
-// --- キャッシュキー生成関数 ---
+/**
+ * キャッシュキーを生成します。URLと指示を基に一意のキーを作成します。
+ * @param url - 現在のページのURL。
+ * @param instruction - ユーザーからの指示。
+ * @returns 生成されたキャッシュキー文字列。
+ */
 function getCacheKey(url: string, instruction: string): string {
   try {
     const urlObject = new URL(url);
     const key = `${urlObject.hostname}${urlObject.pathname} | ${instruction}`;
     return key;
   } catch (e) {
-    // 無効なURL（例: about:blank）の場合は、指示のみをキーとする
+    // about:blankのような無効なURLの場合は、指示のみをキーとする
     return instruction;
   }
 }
 
+/**
+ * `observe`の結果を`cache.json`に保存します。
+ * @param page - 現在のPageオブジェクト。
+ * @param instruction - キャッシュキーとして使用する指示。
+ * @param actionToCache - キャッシュする`ObserveResult`オブジェクト。
+ */
 export async function simpleCache(
   page: Page,
   instruction: string,
   actionToCache: ObserveResult,
 ) {
   const key = getCacheKey(page.url(), instruction);
-  // Save action to cache.json
   try {
-    // Read existing cache if it exists
     let cache: Record<string, ObserveResult> = {};
     try {
       const existingCache = await fs.readFile("cache.json", "utf-8");
       cache = JSON.parse(existingCache);
     } catch (error) {
-      // File doesn't exist yet, use empty cache
+      // ファイルが存在しない場合は、空のキャッシュから開始
     }
-
-    // Add new action to cache
     cache[key] = actionToCache;
-
-    // Write updated cache to file
     await fs.writeFile("cache.json", JSON.stringify(cache, null, 2));
   } catch (error) {
-    console.error(chalk.red("Failed to save to cache:"), error);
+    console.error(chalk.red("キャッシュへの保存に失敗しました:"), error);
   }
 }
 
+/**
+ * `cache.json`から指示に対応するキャッシュ済みアクションを読み込みます。
+ * @param page - 現在のPageオブジェクト。
+ * @param instruction - 検索する指示。
+ * @returns キャッシュされた`ObserveResult`オブジェクト。見つからない場合はnull。
+ */
 export async function readCache(
   page: Page,
   instruction: string,
@@ -147,51 +171,57 @@ export async function readCache(
     const cache: Record<string, ObserveResult> = JSON.parse(existingCache);
     return cache[key] || null;
   } catch (error) {
+    // ファイルが存在しない、または読み込めない場合はキャッシュなしとみなす
     return null;
   }
 }
 
 /**
- * This function is used to act with a cacheable action.
- * It will first try to get the action from the cache.
- * If not in cache, it will observe the page and cache the result.
- * Then it will execute the action.
- * @param instruction - The instruction to act with.
+ * キャッシュを利用して`act`操作を実行します。
+ * 1. まずキャッシュからアクションを検索します。
+ * 2. キャッシュにあれば、それを使って即座に実行します。
+ * 3. なければ、`observe`を実行してアクションを決定し、結果をキャッシュに保存してから実行します。
+ * @param page - 操作対象のPageオブジェクト。
+ * @param instruction - 実行したい操作の自然言語指示。
+ * @throws {Error} `observe`で操作対象の要素が見つからなかった場合にエラーをスローします。
  */
 export async function actWithCache(
   page: Page,
   instruction: string,
 ): Promise<void> {
-  // Try to get action from cache first
   const cachedAction = await readCache(page, instruction);
   if (cachedAction) {
-    console.log(chalk.blue("Using cached action for:"), instruction);
+    console.log(chalk.blue("キャッシュされたアクションを使用:"), instruction);
     await page.act(cachedAction);
     return;
   }
 
-  // If not in cache, observe the page and cache the result
   const results = await page.observe(instruction);
-  console.log(chalk.blue("Got results:"), results);
+  console.log(chalk.blue("Observe結果:"), results);
 
   if (results.length === 0) {
     throw new Error(`キャッシュ用の要素が見つかりませんでした: "${instruction}"`);
   }
 
-  // Cache the playwright action
   const actionToCache = results[0];
-  console.log(chalk.blue("Taking cacheable action:"), actionToCache);
+  console.log(chalk.blue("アクションをキャッシュします:"), actionToCache);
   await simpleCache(page, instruction, actionToCache);
-  // OPTIONAL: Draw an overlay over the relevant xpaths
+  
+  // ユーザーにどの要素が対象か視覚的にフィードバック
   await drawObserveOverlay(page, results);
-  await page.waitForTimeout(1000); // Can delete this line, just a pause to see the overlay
+  await page.waitForTimeout(1000);
   await clearOverlays(page);
 
-  // Execute the action
   await page.act(actionToCache);
 }
 
-// --- 安全なファイルパスを取得・検証する関数 ---
+/**
+ * 安全なファイルパスを取得し、ディレクトリトラバーサル攻撃を防ぎます。
+ * ファイルパスが`workspace`ディレクトリ内に収まっていることを保証します。
+ * @param filename - 操作対象のファイル名。
+ * @returns `workspace`ディレクトリをルートとする絶対パス。
+ * @throws {Error} パスが`workspace`ディレクトリ外を指している場合にセキュリティエラーをスローします。
+ */
 export function getSafePath(filename: string): string {
     const workspaceDir = path.resolve(process.cwd(), 'workspace');
     const intendedPath = path.resolve(workspaceDir, filename);
@@ -201,7 +231,7 @@ export function getSafePath(filename: string): string {
         throw new Error(`セキュリティエラー: ディレクトリトラバーサルが検出されました。ファイル操作は 'workspace' ディレクトリ内に限定されています。`);
     }
     
-    // ディレクトリが存在しない場合は作成
+    // ファイルが配置されるディレクトリが存在しない場合は再帰的に作成
     const dir = path.dirname(intendedPath);
     fs.mkdir(dir, { recursive: true });
 

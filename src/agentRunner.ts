@@ -1,3 +1,9 @@
+/**
+ * @file 非対話モードでAIエージェントのタスク実行を担う機能を提供します。
+ * Playwrightのテストケースなど、自動化された環境からエージェントを呼び出すための
+ * エントリーポイントとして機能します。
+ */
+
 import { Stagehand } from "@browserbasehq/stagehand";
 import { AgentState } from "./agentState.js";
 import { planSubgoals } from "./chiefAgent.js";
@@ -5,21 +11,30 @@ import { taskAutomationAgent, getLlmInstance } from "./taskAutomationAgent.js";
 import { availableTools } from "./tools/index.js";
 import { AgentExecutionResult, CustomTool } from "./types.js";
 
-// askUserツールを無効化したテスト用のツールセットを作成
+// テスト環境ではユーザーへの問い合わせができないため、`ask_user`ツールを無効化する
 const testSafeTools: CustomTool[] = availableTools.filter(t => t.name !== 'ask_user');
 const testSafeToolRegistry = new Map<string, CustomTool>(testSafeTools.map(t => [t.name, t]));
 
+/**
+ * エージェントの実行設定を定義するインターフェース。
+ */
 export interface AgentTaskConfig {
+  /** 司令塔エージェントが生成できるサブゴールの最大数。デフォルトは10。 */
   maxSubgoals?: number;
+  /** 各サブゴールで実行エージェントが試行できる最大ループ回数。デフォルトは15。 */
   maxLoopsPerSubgoal?: number;
 }
 
 /**
- * 非対話モードでAIエージェントのタスクを実行する
- * @param task - ユーザーが与える高レベルなタスク
- * @param stagehand - Stagehandのインスタンス
- * @param config - エージェントの実行設定
- * @returns タスクが成功した場合は最終結果、失敗した場合はエラーをスロー
+ * 非対話モードでAIエージェントのタスクを実行します。
+ * この関数は、Playwrightのテストケース内など、ユーザーの介入なしで
+ * エージェントの動作を検証する目的で使用されます。
+ *
+ * @param task - ユーザーが与える高レベルなタスク文字列。
+ * @param stagehand - 初期化済みのStagehandインスタンス。
+ * @param config - エージェントの実行に関する設定オプション。
+ * @returns タスクが成功した場合は、エージェントの自己評価を含む最終結果を返します。
+ * @throws {Error} タスクの計画やサブゴールの実行に失敗した場合にエラーをスローします。
  */
 export async function runAgentTask(
   task: string,
@@ -34,10 +49,11 @@ export async function runAgentTask(
   console.log(`👑 司令塔エージェントがタスク計画を開始: "${task}"`);
   const subgoals = await planSubgoals(task, llm);
   if (subgoals.length > maxSubgoals) {
+    // 無限ループや意図しない長時間の実行を防ぐためのガードレール
     throw new Error(`計画されたサブゴールが多すぎます: ${subgoals.length} > ${maxSubgoals}`);
   }
 
-  // 2. 各サブゴールの実行
+  // 2. 各サブゴールの逐次実行
   for (const [index, subgoal] of subgoals.entries()) {
     console.log(`\n▶️ サブゴール ${index + 1}/${subgoals.length} 実行中: "${subgoal}"`);
     
@@ -47,27 +63,30 @@ export async function runAgentTask(
       state,
       task,
       { 
-        isTestEnvironment: true, // 非対話モードであることを示すフラグ
+        isTestEnvironment: true, // 非対話モードであることを実行エージェントに伝える
         maxLoops: maxLoopsPerSubgoal,
-        tools: testSafeTools, // askUserを除外したツールセット
+        tools: testSafeTools, // `ask_user`を除外したツールセットを使用
         toolRegistry: testSafeToolRegistry,
       }
     );
 
     if (!success) {
+      // サブゴールのいずれかが失敗した場合、タスク全体を失敗とみなし、即座にエラーをスローする
       throw new Error(`サブゴール "${subgoal}" の実行に失敗しました。`);
     }
   }
 
-  // 3. 最終結果の確認
+  // 3. 最終結果の検証と返却
   const finalHistory = state.getHistory();
+  // `finish`ツールが正常に呼び出され、自己評価が完了したかを確認
   const finishRecord = finalHistory.find(h => h.toolCall.toolName === 'finish');
   if (finishRecord && typeof finishRecord.result === 'string' && finishRecord.result.startsWith('SELF_EVALUATION_COMPLETE:')) {
     console.log("✅ 全てのサブゴールの処理が完了しました。");
-    // SELF_EVALUATION_COMPLETE: { ... } のような文字列からJSON部分を抽出
+    // `SELF_EVALUATION_COMPLETE: { ... }` という文字列からJSON部分を抽出してパースする
     const resultJson = finishRecord.result.replace('SELF_EVALUATION_COMPLETE: ', '');
     return JSON.parse(resultJson);
   } else {
+    // `finish`ツールが呼ばれずにループが終了した場合、タスクは未完了とみなす
     throw new Error("エージェントはタスクを完了せずに終了しました。");
   }
 }

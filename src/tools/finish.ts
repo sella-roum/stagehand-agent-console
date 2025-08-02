@@ -1,23 +1,46 @@
+/**
+ * @file `finish`ツールを定義します。
+ * このツールは、エージェントがタスク全体を完了したと判断した際に呼び出され、
+ * 最終的な回答を報告し、自己評価を行います。
+ */
+
 import { z } from "zod";
 import { AgentState } from "../agentState.js";
 import { getEvaluationPrompt, evaluationSchema } from "../prompts/evaluation.js";
 import { LanguageModel, generateObject } from "ai";
 
+/**
+ * `finish`ツールの入力スキーマ。
+ */
 export const finishSchema = z.object({
   answer: z.string().describe("ユーザーの初期タスクに対する最終的な回答。"),
 });
 
+/**
+ * `finish`ツールの定義オブジェクト。
+ */
 export const finishTool = {
   name: "finish",
   description: "全てのタスクが完了したと判断した場合に、最終的な回答をユーザーに報告して終了するために使用します。",
   schema: finishSchema,
+  /**
+   * `finish`ツールを実行します。
+   * 最終回答を報告した後、LLMに自己評価を依頼し、その結果を返します。
+   * @param state - 現在のエージェントの状態。
+   * @param args - `finishSchema`に基づいた引数。
+   * @param llm - 自己評価に使用する言語モデルのインスタンス。
+   * @param initialTask - ユーザーが最初に与えた高レベルなタスク。
+   * @returns 自己評価の結果を含む特別な文字列。これにより、エージェントのループが終了します。
+   */
   execute: async (state: AgentState, { answer }: z.infer<typeof finishSchema>, llm: LanguageModel, initialTask: string): Promise<string> => {
     console.log(`\n🏁 エージェントがタスク完了を報告しました。最終回答: ${answer}`);
     console.log("  ...自己評価を実行中...");
 
-    const historySummary = JSON.stringify(state.getHistory().slice(-5)); // 直近5件の履歴
+    // 自己評価のために、直近の履歴を要約してコンテキストとして渡す
+    const historySummary = JSON.stringify(state.getHistory().slice(-5));
     const evalPrompt = getEvaluationPrompt(initialTask, answer, historySummary);
 
+    // LLMに自己評価を依頼
     const { object: evaluationResult } = await generateObject({
       model: llm,
       prompt: evalPrompt,
@@ -33,7 +56,8 @@ export const finishTool = {
     console.log(`  理由: ${evaluationResult.reasoning}`);
     console.log("--------------------");
 
-    // "finish"が呼ばれたことを示す特別な文字列を返す
+    // "finish"が呼ばれ、自己評価が完了したことを示す特別な文字列を返す
+    // これにより、呼び出し元のエージェントループが正常に終了する
     return `SELF_EVALUATION_COMPLETE: ${JSON.stringify(evaluationResult)}`;
   },
 };

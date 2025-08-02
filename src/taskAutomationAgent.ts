@@ -1,7 +1,8 @@
 /**
- * @file 高レベルなタスクを自律的に計画・実行するAIエージェント機能を提供します。
- * このバージョンは、Vercel AI SDKを利用してGoogle Gemini, Groq, OpenRouterを動的に切り替え可能です。
- * アーキテクチャを「ツール呼び出しモード」に移行し、信頼性と拡張性を向上させています。
+ * @file 実行エージェント(Task Automation Agent)の機能を提供します。
+ * このエージェントは、司令塔から与えられたサブゴールを達成するために、
+ * 思考、ツール選択、実行、検証、自己修復のループを実行します。
+ * Vercel AI SDKを利用して、Google Gemini, Groq, OpenRouterなどのLLMを動的に切り替え可能です。
  */
 
 import { Stagehand } from "@browserbasehq/stagehand";
@@ -19,6 +20,11 @@ import { requestUserApproval } from "./debugConsole.js";
 import { generateAndSaveSkill } from "./skillManager.js";
 import { CustomTool } from "./types.js";
 
+/**
+ * プロジェクトで定義されたカスタムツール形式を、Vercel AI SDKが要求する形式に変換します。
+ * @param tools - プロジェクト独自のカスタムツールの配列。
+ * @returns Vercel AI SDKの`generateText`関数に渡すためのツールオブジェクト。
+ */
 function mapCustomToolsToAITools(tools: CustomTool[]): Record<string, Tool> {
   return tools.reduce((acc, tool) => {
     acc[tool.name] = {
@@ -29,7 +35,11 @@ function mapCustomToolsToAITools(tools: CustomTool[]): Record<string, Tool> {
   }, {} as Record<string, Tool>);
 }
 
-// LLMインスタンスを生成するヘルパー関数
+/**
+ * 環境変数に基づいて、適切なLLMクライアントのインスタンスを生成して返します。
+ * @returns Vercel AI SDKの`LanguageModel`インスタンス。
+ * @throws {Error} 必要なAPIキーが.envファイルに設定されていない場合にエラーをスローします。
+ */
 export function getLlmInstance(): LanguageModel {
     const agentMode = process.env.AGENT_MODE || 'text';
     const LLM_PROVIDER = process.env.LLM_PROVIDER || 'google';
@@ -49,7 +59,7 @@ export function getLlmInstance(): LanguageModel {
             headers: { 'HTTP-Referer': 'http://localhost:3000', 'X-Title': 'Stagehand Agent Console' }
         });
         const modelName = agentMode === 'vision'
-            ? ''
+            ? '' // Visionモードの場合、モデル名をOpenAIクライアントに任せる
             : process.env.OPENROUTER_MODEL || '';
         return openrouter(modelName);
     } else { // google
@@ -57,16 +67,23 @@ export function getLlmInstance(): LanguageModel {
         if (!googleApiKey) throw new Error("GOOGLE_API_KEYが.envファイルに設定されていません。");
         const google = createGoogleGenerativeAI({ apiKey: googleApiKey });
         const modelName = agentMode === 'vision'
-            ? ''
+            ? process.env.GEMINI_MODEL || '' // 現状のモデルは、すべて画像認識に対応しているため、このように記述
             : process.env.GEMINI_MODEL || '';
         return google(modelName);
     }
 }
 
+/**
+ * 新しいページ（ポップアップなど）が開かれた際のグローバルイベントハンドラを設定します。
+ * Visionモデルを使用し、不要なポップアップ（広告、クッキー同意など）を自動で閉じます。
+ * @param stagehand - Stagehandのインスタンス。
+ * @param llm - Vision分析に使用する言語モデルのインスタンス。
+ */
 async function setupGlobalEventHandlers(stagehand: Stagehand, llm: LanguageModel) {
   stagehand.page.context().on('page', async (newPage) => {
     try {
       console.log(`\n🚨 新しいページ/ポップアップが検出されました: ${await newPage.title()}`);
+      // ページが読み込まれるのを待つ
       await newPage.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
       
       const screenshotBuffer = await newPage.screenshot();
@@ -77,6 +94,7 @@ async function setupGlobalEventHandlers(stagehand: Stagehand, llm: LanguageModel
         reasoning: z.string(),
       });
 
+      // Visionモデルにスクリーンショットを渡し、ポップアップが不要かどうかを判断させる
       const { object: analysis } = await generateObject({
         model: llm,
         schema: popupAnalysisSchema,
@@ -102,13 +120,14 @@ async function setupGlobalEventHandlers(stagehand: Stagehand, llm: LanguageModel
 }
 
 /**
- * 実行エージェントとして、与えられたサブゴールを達成します。
- * @param subgoal - 司令塔エージェントから与えられた現在のサブゴール
- * @param stagehand - Stagehandのインスタンス
- * @param state - セッション全体で共有されるエージェントの状態
- * @param originalTask - ユーザーが最初に与えた高レベルなタスク
- * @param options - テスト環境用の設定などを含むオプション
- * @returns サブゴールの達成に成功した場合はtrue、失敗した場合はfalse
+ * 実行エージェントとして、与えられたサブゴールを達成するための思考と行動のループを実行します。
+ *
+ * @param subgoal - 司令塔エージェントから与えられた現在のサブゴール。
+ * @param stagehand - Stagehandのインスタンス。
+ * @param state - セッション全体で共有されるエージェントの状態。
+ * @param originalTask - ユーザーが最初に与えた高レベルなタスク。
+ * @param options - テスト環境用の設定などを含むオプション。
+ * @returns サブゴールの達成に成功した場合はtrue、失敗した場合はfalse。
  */
 export async function taskAutomationAgent(
     subgoal: string, 
@@ -131,29 +150,36 @@ export async function taskAutomationAgent(
 
     const llm = getLlmInstance();
 
+    // Visionモードが有効な場合、ポップアップを自動処理するイベントハンドラを設定
     if (process.env.AGENT_MODE === 'vision') {
         await setupGlobalEventHandlers(stagehand, llm);
     }
 
+    // プロンプトの初期設定
     const messages: CoreMessage[] = [
         { role: 'system', content: getBasePrompt(isTestEnvironment) },
         { role: 'user', content: `最終目標: ${originalTask}\n現在のサブゴール: ${subgoal}` },
     ];
 
+    // 思考と行動のメインループ
     for (let i = 0; i < maxLoops; i++) {
         console.log(`\n[ループ ${i + 1}] 🧠 AIが次の行動を思考中...`);
 
+        // 1. 状況認識: 現在のページ情報を収集
         const summary = await state.getActivePage().extract().then(e => e?.page_text?.substring(0, 2000) || "ページ情報なし").catch(() => "ページ情報なし");
         const contextPrompt = await formatContext(state, summary);
         
+        // 2. 思考: LLMに次の行動（ツール呼び出し）を決定させる
         const { toolCalls, text, finishReason } = await generateText({
             model: llm,
             messages: [...messages, { role: 'user', content: contextPrompt }],
             tools: mapCustomToolsToAITools(tools),
         });
 
+        // サブゴール完了と判断した場合
         if (finishReason === 'stop' && text) {
             console.log(`\n🎉 サブゴール完了！ AIの所感: ${text}`);
+            // テスト環境でなければ、行動履歴から新しいスキルを生成しようと試みる
             if (!isTestEnvironment) {
                 await generateAndSaveSkill(state.getHistory(), llm);
             }
@@ -165,12 +191,14 @@ export async function taskAutomationAgent(
             return true;
         }
 
+        // 3. 承認: ユーザーに計画の実行許可を求める（介入モードによる）
         const approvedPlan = isTestEnvironment ? toolCalls : await requestUserApproval(state, toolCalls);
         if (!approvedPlan) {
             console.log("ユーザーが計画を拒否しました。サブゴールの実行を中断します。");
             return false;
         }
 
+        // 4. 実行: 承認されたツールを実行し、結果を収集
         messages.push({ role: 'assistant', content: approvedPlan.map(tc => ({ type: 'tool-call', toolCallId: tc.toolCallId, toolName: tc.toolName, args: tc.args })) });
 
         const toolResults = await Promise.all(
@@ -201,16 +229,18 @@ export async function taskAutomationAgent(
             })
         );
         
+        // 5. 検証: finishツールが呼ばれたか確認
         for (const toolResult of toolResults) {
             if (toolResult.toolName === 'finish' && typeof toolResult.result === 'string' && toolResult.result.startsWith('SELF_EVALUATION_COMPLETE')) {
-                return true; // finishが呼ばれたら成功とみなす
+                return true; // finishが呼ばれたらタスク全体が完了したとみなし、成功を返す
             }
         }
 
+        // 6. 履歴の更新: 実行結果をメッセージ履歴に追加し、次のループへ
         messages.push({ role: 'tool', content: toolResults.map(tr => ({ type: 'tool-result', toolCallId: tr.toolCallId, toolName: tr.toolName, result: tr.result })) });
         
         await state.updatePages();
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 1000)); // ページ遷移後の安定化を待つ
     }
 
     console.warn(`⚠️ 最大試行回数（${maxLoops}回）に達したため、処理を中断しました。`);

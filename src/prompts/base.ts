@@ -1,4 +1,15 @@
+/**
+ * @file 実行エージェント(Task Automation Agent)の基本的な行動規範を定義するプロンプトを生成します。
+ */
+
+/**
+ * 実行エージェントの基本的な行動規範と思考プロセスを定義するシステムプロンプトを生成します。
+ * @param isTestEnvironment - 現在の実行環境が自動テスト環境かどうか。
+ *                          trueの場合、ユーザーへの問い合わせを禁止する指示が追加されます。
+ * @returns システムプロンプト文字列。
+ */
 export function getBasePrompt(isTestEnvironment: boolean = false): string {
+  // 実行環境に応じて、ユーザーとの対話に関する指示を切り替える
   const userInteractionGuidance = isTestEnvironment
     ? `
 # 非対話モードでの注意点
