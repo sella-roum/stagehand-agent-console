@@ -5,11 +5,11 @@
  */
 
 import { z } from "zod";
-import { AgentState } from "../agentState.js";
+import { AgentState } from "@/src/agentState";
 import {
   getEvaluationPrompt,
   evaluationSchema,
-} from "../prompts/evaluation.js";
+} from "@/src/prompts/evaluation";
 import { LanguageModel, generateObject } from "ai";
 
 /**

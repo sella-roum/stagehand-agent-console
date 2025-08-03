@@ -5,7 +5,7 @@
  */
 
 import { Page, BrowserContext, Stagehand } from "@browserbasehq/stagehand";
-import { ExecutionRecord, TabInfo, InterventionMode } from "./types.js";
+import { ExecutionRecord, TabInfo, InterventionMode } from "@/src/types";
 import * as readline from "node:readline/promises";
 
 /**

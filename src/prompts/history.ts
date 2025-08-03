@@ -1,4 +1,4 @@
-import { AgentState } from "../agentState.js";
+import { AgentState } from "@/src/agentState";
 
 /**
  *

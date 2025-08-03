@@ -4,7 +4,7 @@
  */
 
 import { z } from "zod";
-import { AgentState } from "../agentState.js";
+import { AgentState } from "@/src/agentState";
 import { LanguageModel, generateText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";

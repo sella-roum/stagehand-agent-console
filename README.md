@@ -150,8 +150,8 @@ npm start
 ```typescript
 import { test, expect } from "@playwright/test";
 import { Stagehand } from "@browserbasehq/stagehand";
-import StagehandConfig from "../stagehand.config.js";
-import { runAgentTask } from "../src/agentRunner.js";
+import StagehandConfig from "../stagehand.config";
+import { runAgentTask } from "../src/agentRunner";
 
 // テストのタイムアウトを5分に設定
 test.setTimeout(300000);

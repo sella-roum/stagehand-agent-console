@@ -5,16 +5,16 @@
  */
 
 import { Stagehand } from "@browserbasehq/stagehand";
-import { AgentState } from "./agentState.js";
-import { planSubgoals } from "./chiefAgent.js";
-import { taskAutomationAgent, getLlmInstance } from "./taskAutomationAgent.js";
-import { availableTools } from "./tools/index.js";
-import { AgentExecutionResult, CustomTool } from "./types.js";
+import { AgentState } from "@/src/agentState";
+import { planSubgoals } from "@/src/chiefAgent";
+import { taskAutomationAgent, getLlmInstance } from "@/src/taskAutomationAgent";
+import { availableTools } from "@/src/tools/index";
+import { AgentExecutionResult, CustomTool } from "@/src/types";
 import { generateObject } from "ai";
 import {
   progressEvaluationSchema,
   getProgressEvaluationPrompt,
-} from "./prompts/progressEvaluation.js";
+} from "@/src/prompts/progressEvaluation";
 
 // テスト環境ではユーザーへの問い合わせができないため、`ask_user`ツールを無効化する
 const testSafeTools: CustomTool[] = availableTools.filter(

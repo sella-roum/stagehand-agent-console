@@ -68,11 +68,27 @@ ${history}
 5.  スキルを生成する場合、以下の要件を満たしてください:
     -   **skill_name:** \`loginToGitHub\` のような、処理内容がわかるキャメルケースの関数名。
     -   **skill_description:** このスキルが何をするかの簡潔な説明。
-    -   **skill_code:**
-        -   TypeScriptの非同期関数（async function）であること。
-        -   第一引数として \`state: AgentState\` を、第二引数として必要なパラメータを持つオブジェクト \`args\` を受け取ること。
-        -   内部では \`state.getActivePage().act()\` などのツールを呼び出すこと。
-        -   成功メッセージを返すこと。
+    -   **skill_code:** 以下の「スキルコードの厳格な要件」に完全に従ってコードを生成してください。
+
+# スキルコードの厳格な要件
+-   **構造:** すべてのロジックは \`export async function execute(state: AgentState, args: any): Promise<string>\` の中に直接記述してください。**内部で別の関数を定義してはいけません。**
+-   **API使用法:**
+    -   ブラウザ操作には \`state.getActivePage().act("指示")\` または \`state.getActivePage().act({ action: "指示" })\` を使用します。
+    -   情報抽出には \`state.getActivePage().extract("指示")\` または \`state.getActivePage().extract({ instruction: "指示" })\` を使用します。
+-   **引数:** スキルが必要とする外部からの入力（例：ユーザー名、URL）は、\`args\` オブジェクトから取得してください (例: \`args.username\`)。
+-   **戻り値:** 必ず操作の成功を示す文字列を \`return\` してください。抽出したデータを返すこともできます。
+
+# スキルコードの良い例（この形式に厳密に従ってください）
+\`\`\`typescript
+// 良い例: ログイン処理
+const page = state.getActivePage();
+await page.goto("https://example.com/login");
+await page.act(\`'ユーザー名'の入力欄に「\${args.username}」と入力して\`);
+await page.act(\`'パスワード'の入力欄に「\${args.password}」と入力して\`);
+await page.act("'ログイン'ボタンをクリックして");
+await page.waitForURL("**/dashboard");
+return "ログインに成功しました。";
+\`\`\`
 
 # 出力形式
 必ず指定されたJSON形式で出力してください。

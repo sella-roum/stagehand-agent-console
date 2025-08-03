@@ -4,9 +4,9 @@
  */
 
 import { z } from "zod";
-import { AgentState } from "../agentState.js";
-import { confirmAction } from "../debugConsole.js";
-import { getSafePath } from "../../utils.js";
+import { AgentState } from "@/src/agentState";
+import { confirmAction } from "@/src/debugConsole";
+import { getSafePath } from "@/utils";
 import fs from "fs/promises";
 
 // --- writeFile Tool ---

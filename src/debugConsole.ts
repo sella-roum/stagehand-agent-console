@@ -6,16 +6,16 @@
 import type { Stagehand } from "@browserbasehq/stagehand";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { taskAutomationAgent, getLlmInstance } from "./taskAutomationAgent.js";
-import { AgentState } from "./agentState.js";
-import { InterventionMode } from "./types.js";
+import { taskAutomationAgent, getLlmInstance } from "@/src/taskAutomationAgent";
+import { AgentState } from "@/src/agentState";
+import { InterventionMode } from "@/src/types";
 import { ToolCall, generateObject } from "ai";
-import { planSubgoals } from "./chiefAgent.js";
+import { planSubgoals } from "@/src/chiefAgent";
 import {
   progressEvaluationSchema,
   getProgressEvaluationPrompt,
-} from "./prompts/progressEvaluation.js";
-import { toolRegistry } from "./tools/index.js";
+} from "@/src/prompts/progressEvaluation";
+import { toolRegistry } from "@/src/tools/index";
 
 /**
  * ユーザーにy/nの確認を求める関数
