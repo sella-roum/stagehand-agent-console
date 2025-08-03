@@ -1,0 +1,28 @@
+.log-panel {
+  flex-grow: 1;
+}
+
+.log-content {
+  flex-grow: 1;
+  overflow-y: auto;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.9em;
+}
+
+.log-entry {
+  padding: 2px 4px;
+  border-radius: 3px;
+  margin-bottom: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-timestamp {
+  color: #888;
+  margin-right: 8px;
+}
+
+.log-info { color: var(--text-color); }
+.log-error { background-color: rgba(208, 2, 27, 0.2); color: var(--error-color); }
+.log-warn { background-color: rgba(245, 166, 35, 0.2); color: var(--warn-color); }
+.log-system { color: var(--system-color); font-style: italic; }

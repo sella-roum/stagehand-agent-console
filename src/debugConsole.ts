@@ -3,14 +3,17 @@
  * ユーザーからのコマンド入力を受け付け、AIへの指示やPlaywrightの操作を実行します。
  */
 
-import type { Stagehand } from "@browserbasehq/stagehand";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { taskAutomationAgent, getLlmInstance } from "./taskAutomationAgent.js";
+import { clearLine, cursorTo } from "node:readline";
 import { AgentState } from "./agentState.js";
 import { InterventionMode } from "./types.js";
 import { ToolCall } from "ai";
-import { planSubgoals } from "./chiefAgent.js";
+import { executeCommand } from "./commandExecutor.js";
+import { eventHub } from "./eventHub.js";
+import open from "open";
+import chalk from "chalk";
+import { ClientToServerEvents } from "../types/protocol.js";
 
 /**
  * ユーザーにy/nの確認を求める関数
@@ -54,65 +57,14 @@ const helpMessage = `
 
   mode:<mode>        - 介入モードを設定 (autonomous, confirm, edit)。引数なしで現在値表示。
                      例: mode:autonomous
+  
+  gui                - ブラウザでGUIデバッグコンソールを開きます。
 
   help               - このヘルプメッセージを表示します。
 
   exit               - デバッグコンソールを終了します。
 ------------------------------------
 `;
-
-/**
- * ユーザーに計画の承認を求める関数。現在の介入モードに応じて動作が変わる。
- * @param state - 現在のエージェントの状態
- * @param plan - AIが生成した実行計画 (ToolCallの配列)
- * @returns 承認または編集された計画。ユーザーが拒否した場合はnull。
- */
-export async function requestUserApproval(
-  state: AgentState,
-  plan: ToolCall<string, any>[],
-): Promise<ToolCall<string, any>[] | null> {
-  const mode = state.getInterventionMode();
-
-  console.log("\n--- 実行計画 ---");
-  plan.forEach((step, index) => {
-    console.log(`${index + 1}. ${step.toolName}(${JSON.stringify(step.args)})`);
-  });
-  console.log("-----------------");
-
-  if (mode === "autonomous") {
-    console.log("🤖 自律モード: 計画を自動的に承認します。 (2秒後に実行...)");
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    return plan;
-  }
-
-  const rl = readline.createInterface({ input, output });
-  let prompt = "この計画で実行しますか？ (y/n";
-  if (mode === "edit") {
-    prompt += "/edit";
-  }
-  prompt += ") ";
-
-  const answer = await rl.question(prompt);
-  rl.close();
-
-  switch (answer.toLowerCase()) {
-    case "y":
-    case "yes":
-      return plan;
-    case "n":
-    case "no":
-      return null;
-    case "edit":
-      if (mode === "edit") {
-        return await startPlanEditor(plan);
-      }
-      console.log("無効な入力です。'y'または'n'で回答してください。");
-      return requestUserApproval(state, plan);
-    default:
-      console.log("無効な入力です。");
-      return requestUserApproval(state, plan);
-  }
-}
 
 /**
  * 計画を対話的に編集するためのシンプルなCLIインターフェース
@@ -122,14 +74,14 @@ export async function requestUserApproval(
 async function startPlanEditor(
   plan: ToolCall<string, any>[],
 ): Promise<ToolCall<string, any>[]> {
-  console.log("\n--- 計画編集モード ---");
-  console.log("コマンド: list, delete <番号>, done");
+  console.log(chalk.magenta("\n--- 計画編集モード ---"));
+  console.log(chalk.magenta("コマンド: list, delete <番号>, done"));
   const currentPlan = [...plan];
   const rl = readline.createInterface({ input, output });
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const userInput = await rl.question("編集 > ");
+    const userInput = await rl.question(chalk.magenta("編集 > "));
     const [command, ...args] = userInput.split(" ");
 
     switch (command.toLowerCase()) {
@@ -152,7 +104,7 @@ async function startPlanEditor(
       }
       case "done":
         rl.close();
-        console.log("--- 編集完了 ---");
+        console.log(chalk.magenta("--- 編集完了 ---"));
         return currentPlan;
       default:
         console.log("不明な編集コマンドです。");
@@ -161,150 +113,195 @@ async function startPlanEditor(
 }
 
 /**
+ * CUI側で承認リクエストを処理するハンドラをセットアップします。
+ * この関数はCUIモードでのみ呼び出されるべきです。
+ * @param state - エージェントの状態。介入モードの確認に使用します。
+ */
+export function setupApprovalHandler(state: AgentState) {
+  eventHub.on("agent:approval-request", async ({ plan }) => {
+    const mode = state.getInterventionMode();
+    if (mode === "autonomous") {
+      return;
+    }
+
+    // CUIに直接プロンプトを表示して応答を待つ
+    const rl = readline.createInterface({ input, output });
+    let prompt = "この計画で実行しますか？ (y/n";
+    if (mode === "edit") {
+      prompt += "/edit";
+    }
+    prompt += ") ";
+    const answer = await rl.question(chalk.green(prompt));
+    rl.close();
+
+    let response: Parameters<ClientToServerEvents["agent:approval-response"]>[0] = { approved: false };
+
+    switch (answer.toLowerCase()) {
+      case "y":
+      case "yes":
+        response = { approved: true, editedPlan: plan };
+        break;
+      case "n":
+      case "no":
+        response = { approved: false };
+        break;
+      case "edit":
+        if (mode === "edit") {
+          const editedPlan = await startPlanEditor(plan);
+          response = { approved: true, editedPlan: editedPlan };
+        } else {
+          console.log("編集モードではありません。");
+        }
+        break;
+      default:
+        console.log("無効な入力です。計画は拒否されました。");
+    }
+    
+    eventHub.emit("agent:approval-response", response);
+  });
+}
+
+/**
+ * ユーザーに計画の承認を非同期で要求します。
+ * 実行モード（CUI/GUI）に応じて、適切な方法でユーザーに応答を求めます。
+ * @param state - 現在のエージェントの状態。
+ * @param plan - AIが生成した実行計画。
+//  * @param isGuiMode - GUIモードで実行されているかどうか。
+ * @returns 承認された場合は計画、拒否された場合はnull。
+ */
+export function requestUserApproval(
+  state: AgentState,
+  plan: ToolCall<string, any>[],
+  // isGuiMode: boolean,
+): Promise<ToolCall<string, any>[] | null> {
+  const mode = state.getInterventionMode();
+  if (mode === "autonomous") {
+    eventHub.emit("agent:log", {
+      level: "system",
+      message: "🤖 自律モード: 計画を自動的に承認します。",
+      timestamp: new Date().toISOString(),
+    });
+    return Promise.resolve(plan);
+  }
+
+  // 承認要求のログは共通で送信
+  let planLogMessage = "--- 実行計画 ---\n";
+  plan.forEach((step, index) => {
+      planLogMessage += `${index + 1}. ${step.toolName}(${JSON.stringify(step.args)})\n`;
+  });
+  planLogMessage += "-----------------";
+  eventHub.emit("agent:log", {
+      level: 'system',
+      message: planLogMessage,
+      timestamp: new Date().toISOString(),
+  });
+
+  return new Promise((resolve) => {
+    state.setIsAwaitingApproval(true);
+
+    const handleResponse = (payload: {
+      approved: boolean;
+      editedPlan?: ToolCall<string, any>[];
+    }) => {
+      eventHub.off("agent:approval-response", handleResponse);
+      state.setIsAwaitingApproval(false);
+      if (payload.approved) {
+        resolve(payload.editedPlan || plan);
+      } else {
+        resolve(null);
+      }
+    };
+
+    eventHub.on("agent:approval-response", handleResponse);
+
+    // どのモードでも承認要求イベントを発行する
+    // CUIモードの場合はsetupApprovalHandlerが、GUIモードの場合はGUIがこのイベントを拾う
+    eventHub.emit("agent:approval-request", { plan });
+  });
+}
+
+/**
  * 対話型のデバッグコンソールを起動し、ユーザーからの入力を待ち受けます。
- * ユーザーはAIへの指示、Playwright Inspectorの起動、コードの直接実行などを
- * コマンドを通じて行えます。
- * @param stagehand - 操作対象となるStagehandのインスタンス
  * @param state - エージェントの状態を管理するインスタンス
  */
-export async function interactiveDebugConsole(
-  stagehand: Stagehand,
-  state: AgentState,
-): Promise<void> {
-  const page = stagehand.page;
+export async function interactiveDebugConsole(state: AgentState): Promise<void> {
+  // CUI専用のログハンドラをここに移動
+  eventHub.on("agent:log", (payload) => {
+    const colorMap = {
+      info: chalk.white,
+      error: chalk.red,
+      warn: chalk.yellow,
+      system: chalk.cyan,
+    };
+    const color = colorMap[payload.level] || colorMap.info;
+    
+    // readlineがアクティブな場合、プロンプトを再描画するために一手間かける
+    const rl = (input as any)._readableState?.pipes?.find((p: any) => p.constructor.name === 'Interface');
+    if (rl && typeof (rl as any).getCursorPos === 'function') {
+      clearLine(process.stdout, 0);
+      cursorTo(process.stdout, 0);
+      console.log(color(`[${payload.level.toUpperCase()}] ${payload.message}`));
+      rl.prompt(true);
+    } else {
+      console.log(color(`[${payload.level.toUpperCase()}] ${payload.message}`));
+    }
+  });
+
   const rl = readline.createInterface({ input, output });
   console.log(helpMessage);
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const userInput = await rl.question("> ");
+    const userInput = await rl.question(chalk.bold("> "));
     const [command, ...args] = userInput.split(/:(.*)/s);
     const argument = args.join(":").trim();
 
+    const commandLower = command.trim().toLowerCase();
+
+    if (commandLower === "exit") {
+      rl.close();
+      return;
+    }
+
+    if (commandLower === "gui") {
+      const url = "http://localhost:3000";
+      console.log(
+        chalk.cyan(
+          `[SYSTEM] GUIモードに移行します。ブラウザで ${url} を開いています...`,
+        ),
+      );
+      await open(url);
+      continue;
+    }
+
+    if (commandLower === "help") {
+      console.log(helpMessage);
+      continue;
+    }
+
+    if (commandLower === "mode") {
+      if (!argument) {
+        console.log(
+          chalk.cyan(`[SYSTEM] 現在の介入モード: ${state.getInterventionMode()}`),
+        );
+      } else {
+        state.setInterventionMode(argument as InterventionMode);
+      }
+      continue;
+    }
+
     try {
-      switch (command.trim().toLowerCase()) {
-        case "act": {
-          if (!argument) {
-            console.log(
-              "指示を指定してください。例: act: 'OK'ボタンをクリック",
-            );
-            break;
-          }
-          console.log(`🤖 AIに指示を実行中: "${argument}"...`);
-          const actResult = await page.act(argument);
-          console.log("✅ 実行完了:", actResult);
-          break;
-        }
-        case "observe": {
-          console.log(
-            `🤖 AIにページを観察させています: "${argument || "すべて"}"...`,
-          );
-          const observations = await page.observe(argument);
-          console.log("👀 発見された要素:", observations);
-          break;
-        }
-        case "extract": {
-          console.log(
-            `🤖 AIに情報を抽出させています: "${argument || "ページ全体のテキスト"}"...`,
-          );
-          const extraction = argument
-            ? await page.extract(argument)
-            : await page.extract();
-          console.log("📊 抽出された情報:", extraction);
-          break;
-        }
-        case "agent": {
-          if (!argument) {
-            console.log(
-              "実行するタスクを指定してください。例: agent: playwrightのgithubのスター数を調べて",
-            );
-            break;
-          }
-          console.log(
-            `👑 司令塔エージェントにタスクを依頼しました: "${argument}"`,
-          );
-
-          const llm = getLlmInstance();
-          const subgoals = await planSubgoals(argument, llm);
-
-          for (const [index, subgoal] of subgoals.entries()) {
-            console.log(
-              `\n▶️ サブゴール ${index + 1}/${subgoals.length} 実行中: "${subgoal}"`,
-            );
-            const success = await taskAutomationAgent(
-              subgoal,
-              stagehand,
-              state,
-              argument,
-            );
-            if (!success) {
-              console.error(
-                `サブゴール "${subgoal}" の実行に失敗しました。エージェントの処理を中断します。`,
-              );
-              break;
-            }
-          }
-          console.log("✅ 全てのサブゴールの処理が完了しました。");
-          break;
-        }
-        case "inspect":
-          console.log(
-            "🔍 Playwright Inspectorを起動します。Inspectorを閉じると再開します...",
-          );
-          await page.pause(); // Playwright Inspectorを起動して一時停止
-          console.log("▶️ Inspectorが閉じられました。");
-          break;
-
-        case "eval": {
-          if (!argument) {
-            console.log(
-              "実行するコードを指定してください。例: eval: await page.title()",
-            );
-            break;
-          }
-          console.log(`⚡ コードを実行中: \`${argument}\`...`);
-          // ユーザー入力を非同期関数として動的に生成・実行
-          // 'page'オブジェクトを関数のスコープ内で利用可能にする
-          const result = await new Function(
-            "page",
-            `return (async () => { ${argument} })()`,
-          )(page);
-          console.log("✅ 実行結果:", result);
-          break;
-        }
-        case "goto": {
-          if (!argument) {
-            console.log("URLを指定してください。例: goto: https://google.com");
-            break;
-          }
-          console.log(`🚀 ${argument} に移動中...`);
-          await page.goto(argument);
-          console.log("✅ 移動完了");
-          break;
-        }
-        case "mode": {
-          if (!argument) {
-            console.log(`現在の介入モード: ${state.getInterventionMode()}`);
-            break;
-          }
-          state.setInterventionMode(argument as InterventionMode);
-          break;
-        }
-        case "help":
-          console.log(helpMessage);
-          break;
-
-        case "exit":
-          rl.close(); // readlineインターフェースを閉じる
-          return; // ループを抜けて関数を終了
-
-        default:
-          console.log(
-            `不明なコマンドです: "${command}"。「help」でコマンド一覧を確認できます。`,
-          );
+      const response = await executeCommand(command, argument, state, "cui");
+      if (response.success) {
+        console.log(
+          chalk.green(`✅ 成功: ${response.message}`),
+          response.data || "",
+        );
+      } else {
+        console.error(chalk.red(`❌ 失敗: ${response.message}`));
       }
     } catch (e: any) {
-      console.error("❌ コマンドの実行中にエラーが発生しました:", e.message);
+      console.error(chalk.red("❌ コマンド実行中に致命的なエラー:"), e.message);
     }
   }
 }

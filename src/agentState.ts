@@ -6,6 +6,7 @@
 
 import { Page, BrowserContext, Stagehand } from "@browserbasehq/stagehand";
 import { ExecutionRecord, TabInfo, InterventionMode } from "./types.js";
+import { eventHub } from "./eventHub.js";
 
 /**
  * エージェントのセッション全体の状態を管理するクラス。
@@ -23,6 +24,8 @@ export class AgentState {
   private context: BrowserContext;
   // ユーザーの介入モード
   private interventionMode: InterventionMode = "confirm"; // デフォルトは確認モード
+  // 承認待ち状態フラグを追加
+  private isAwaitingApproval: boolean = false;
 
   /**
    * AgentStateの新しいインスタンスを生成します。
@@ -32,6 +35,16 @@ export class AgentState {
     this.stagehand = stagehandInstance;
     this.context = stagehandInstance.page.context();
     this.pages = [stagehandInstance.page];
+    // 初期状態をブロードキャスト
+    this.broadcastState();
+  }
+
+  /**
+   * このStateが管理しているStagehandインスタンスを取得します。
+   * @returns Stagehandインスタンス。
+   */
+  public getStagehandInstance(): Stagehand {
+    return this.stagehand;
   }
 
   /**
@@ -58,7 +71,16 @@ export class AgentState {
   public setInterventionMode(mode: InterventionMode): void {
     if (["autonomous", "confirm", "edit"].includes(mode)) {
       this.interventionMode = mode;
-      console.log(`✅ 介入モードが '${mode}' に設定されました。`);
+      const message = `✅ 介入モードが '${mode}' に設定されました。`;
+      // CUIとGUIの両方に通知
+      console.log(message);
+      eventHub.emit("agent:log", {
+        level: "system",
+        message,
+        timestamp: new Date().toISOString(),
+      });
+      // 状態が変化したのでブロードキャスト
+      this.broadcastState();
     } else {
       console.error(
         `❌ 無効なモードです: ${mode}。'autonomous', 'confirm', 'edit' のいずれかを指定してください。`,
@@ -75,11 +97,30 @@ export class AgentState {
   }
 
   /**
+   * エージェントがユーザーの承認を待っている状態かどうかを取得します。
+   * @returns 承認待ちの場合はtrue。
+   */
+  public getIsAwaitingApproval(): boolean {
+    return this.isAwaitingApproval;
+  }
+
+  /**
+   * エージェントの承認待ち状態を設定します。
+   * @param isWaiting - 新しい承認待ち状態。
+   */
+  public setIsAwaitingApproval(isWaiting: boolean): void {
+    this.isAwaitingApproval = isWaiting;
+    // TODO: この状態変更もGUIに通知すると、UIをより適切に制御できる
+  }
+
+  /**
    * 現在のブラウザコンテキストからページリストを最新の状態に更新します。
    * 新しいタブが開かれたり、タブが閉じられた際に呼び出されることを想定しています。
    */
   async updatePages(): Promise<void> {
     this.pages = this.context.pages() as Page[];
+    // 状態が変化したのでブロードキャスト
+    await this.broadcastState();
   }
 
   /**
@@ -101,7 +142,9 @@ export class AgentState {
   getPageAtIndex(index: number): Page {
     if (index < 0 || index >= this.pages.length) {
       throw new Error(
-        `無効なタブインデックスです: ${index}。利用可能なインデックスは 0 から ${this.pages.length - 1} です。`,
+        `無効なタブインデックスです: ${index}。利用可能なインデックスは 0 から ${
+          this.pages.length - 1
+        } です。`,
       );
     }
     return this.pages[index];
@@ -112,10 +155,11 @@ export class AgentState {
    * @returns 各タブの情報（インデックス、タイトル、URL、アクティブ状態）を含む配列。
    */
   async getTabInfo(): Promise<TabInfo[]> {
-    await this.updatePages();
+    // updatePagesは外部から呼ばれるため、ここでは直接更新せず、現在のコンテキストから取得
+    const currentPages = this.context.pages() as Page[];
     const activePage = this.getActivePage();
     return Promise.all(
-      this.pages.map(async (p, index) => ({
+      currentPages.map(async (p, index) => ({
         index,
         title: p.isClosed()
           ? "[Closed]"
@@ -124,5 +168,18 @@ export class AgentState {
         isActive: !p.isClosed() && p.url() === activePage.url(),
       })),
     );
+  }
+
+  /**
+   * 現在のエージェントの状態をすべてのクライアントにブロードキャストします。
+   * 状態が変化した際に呼び出されることを想定しています。
+   */
+  public async broadcastState(): Promise<void> {
+    const tabInfo = await this.getTabInfo();
+    eventHub.emit("agent:state-changed", {
+      url: this.getActivePage().url(),
+      tabs: tabInfo,
+      interventionMode: this.interventionMode,
+    });
   }
 }

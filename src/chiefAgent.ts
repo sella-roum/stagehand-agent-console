@@ -8,6 +8,8 @@ import { LanguageModel, generateObject } from "ai";
 import { getChiefAgentPrompt, chiefAgentSchema } from "./prompts/chief.js";
 import { getSafePath } from "../utils.js";
 import fs from "fs/promises";
+import { eventHub } from "./eventHub.js";
+import { LogPayload } from "../types/protocol.js";
 
 /**
  * 司令塔エージェントとして、高レベルなタスクをサブゴールのリストに分解します。
@@ -21,7 +23,23 @@ export async function planSubgoals(
   task: string,
   llm: LanguageModel,
 ): Promise<string[]> {
-  console.log("👑 司令塔エージェントがタスク計画を開始...");
+  /**
+   * ログをCUIとGUIの両方に送信するためのヘルパー関数。
+   * @param message - ログメッセージ。
+   * @param level - ログの重要度レベル。
+   */
+  const log = (
+    message: string,
+    level: LogPayload["level"] = "system",
+  ) => {
+    eventHub.emit("agent:log", {
+      level,
+      message,
+      timestamp: new Date().toISOString(),
+    });
+  };
+
+  log("👑 司令塔エージェントがタスク計画を開始...");
   const prompt = getChiefAgentPrompt(task);
 
   // LLMにタスクの計画を依頼し、指定したスキーマで結果を受け取る
@@ -32,20 +50,24 @@ export async function planSubgoals(
   });
 
   // 生成された計画をユーザーに提示
-  console.log("📝 計画の理由:", plan.reasoning);
-  console.log("📋 生成されたサブゴール:");
+  log(`📝 計画の理由: ${plan.reasoning}`);
+  let goalMessage = "📋 生成されたサブゴール:\n";
   plan.subgoals.forEach((goal, index) => {
-    console.log(`  ${index + 1}. ${goal}`);
+    goalMessage += `  ${index + 1}. ${goal}\n`;
   });
+  log(goalMessage.trim());
 
   // 監査とデバッグのため、生成された計画をファイルに保存する
   try {
     const planPath = getSafePath("plan.json");
     await fs.writeFile(planPath, JSON.stringify(plan.subgoals, null, 2));
-    console.log(`計画を ${planPath} に保存しました。`);
+    log(`計画を ${planPath} に保存しました。`, "info");
   } catch (e: any) {
     // ファイル保存は補助的な機能のため、失敗しても処理は続行する
-    console.warn(`警告: 計画ファイルの保存に失敗しました。理由: ${e.message}`);
+    log(
+      `警告: 計画ファイルの保存に失敗しました。理由: ${e.message}`,
+      "warn",
+    );
   }
 
   return plan.subgoals;

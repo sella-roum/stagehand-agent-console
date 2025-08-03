@@ -10,8 +10,17 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "allowImportingTsExtensions": false,
-    "noEmit": false
+    "noEmit": false,
+    "jsx": "react-jsx"
   },
-  "include": ["src/**/*.ts", "llm_clients/**/*.ts", "tests/**/*.ts", "*.ts"],
+  "include": [
+    "src/**/*.ts",
+    "llm_clients/**/*.ts",
+    "tests/**/*.ts",
+    "*.ts",
+    "types/**/*.ts",
+    "gui/**/*.ts",
+    "gui/**/*.tsx"
+  ],
   "exclude": ["node_modules", "dist"]
 }
