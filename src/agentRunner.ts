@@ -10,6 +10,11 @@ import { planSubgoals } from "./chiefAgent.js";
 import { taskAutomationAgent, getLlmInstance } from "./taskAutomationAgent.js";
 import { availableTools } from "./tools/index.js";
 import { AgentExecutionResult, CustomTool } from "./types.js";
+import { generateObject } from "ai";
+import {
+  progressEvaluationSchema,
+  getProgressEvaluationPrompt,
+} from "./prompts/progressEvaluation.js";
 
 // テスト環境ではユーザーへの問い合わせができないため、`ask_user`ツールを無効化する
 const testSafeTools: CustomTool[] = availableTools.filter(
@@ -74,6 +79,32 @@ export async function runAgentTask(
     if (!success) {
       // サブゴールのいずれかが失敗した場合、タスク全体を失敗とみなし、即座にエラーをスローする
       throw new Error(`サブゴール "${subgoal}" の実行に失敗しました。`);
+    }
+
+    console.log("🕵️‍♂️ タスク全体の進捗を評価中...");
+    const historySummary = JSON.stringify(state.getHistory().slice(-3)); // 直近3件の履歴を要約
+    const currentUrl = state.getActivePage().url();
+    const evalPrompt = getProgressEvaluationPrompt(
+      task,
+      historySummary,
+      currentUrl,
+    );
+
+    const { object: progress } = await generateObject({
+      model: llm,
+      schema: progressEvaluationSchema,
+      prompt: evalPrompt,
+    });
+
+    if (progress.isTaskCompleted) {
+      console.log(
+        `✅ タスクは既に完了したと判断しました。理由: ${progress.reasoning}`,
+      );
+      // 早期終了した場合も、最終結果として評価を返す
+      return {
+        is_success: true,
+        reasoning: progress.reasoning,
+      };
     }
   }
 
