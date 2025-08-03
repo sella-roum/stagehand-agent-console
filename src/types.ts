@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ObserveResult } from "@browserbasehq/stagehand";
 // ToolCallをインポート
 import { ToolCall, LanguageModel } from "ai";
-import { AgentState } from "./agentState.js";
+import { AgentState } from "@/src/agentState";
 
 // エラー分析の文脈で必要となるため、簡略化したPlanStepを定義
 export type PlanStep = {

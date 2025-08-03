@@ -4,9 +4,9 @@
  */
 
 import { z } from "zod";
-import { AgentState } from "../agentState.js";
-import { confirmAction } from "../debugConsole.js";
-import { getSafePath } from "../../utils.js";
+import { AgentState } from "@/src/agentState";
+import { confirmAction } from "@/src/debugConsole";
+import { getSafePath } from "@/utils";
 import fs from "fs/promises";
 
 // --- writeFile Tool ---
@@ -41,9 +41,14 @@ export const writeFileTool = {
     state: AgentState,
     { filename, content }: z.infer<typeof writeFileSchema>,
   ): Promise<string> => {
+    // AgentStateから共有のreadlineインターフェースを取得
+    if (!state.rl) {
+      throw new Error("Readline interface is not available for user confirmation.");
+    }
     // セキュリティ上のリスクを避けるため、ファイル書き込み前にユーザーの確認を必須とする
     const writeConfirmation = await confirmAction(
       `🤖 AIがファイル '${filename}' への書き込みを要求しています。許可しますか？`,
+      state.rl,
     );
     if (!writeConfirmation)
       throw new Error("ユーザーがファイル書き込みを拒否しました。");
@@ -84,9 +89,14 @@ export const readFileTool = {
     state: AgentState,
     { filename }: z.infer<typeof readFileSchema>,
   ): Promise<string> => {
+    // AgentStateから共有のreadlineインターフェースを取得
+    if (!state.rl) {
+      throw new Error("Readline interface is not available for user confirmation.");
+    }
     // セキュリティ上のリスクを避けるため、ファイル読み込み前にユーザーの確認を必須とする
     const readConfirmation = await confirmAction(
       `🤖 AIがファイル '${filename}' の読み込みを要求しています。許可しますか？`,
+      state.rl,
     );
     if (!readConfirmation)
       throw new Error("ユーザーがファイル読み込みを拒否しました。");

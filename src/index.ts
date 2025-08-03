@@ -4,11 +4,11 @@
  */
 
 import { Stagehand } from "@browserbasehq/stagehand";
-import StagehandConfig from "../stagehand.config.js";
-import { interactiveDebugConsole } from "./debugConsole.js";
-import { initializeTools } from "./tools/index.js";
-import { AgentState } from "./agentState.js";
-import { InterventionMode } from "./types.js";
+import StagehandConfig from "@/stagehand.config";
+import { interactiveDebugConsole } from "@/src/debugConsole";
+import { initializeTools } from "@/src/tools/index";
+import { AgentState } from "@/src/agentState";
+import { InterventionMode } from "@/src/types";
 
 /**
  * メイン実行関数

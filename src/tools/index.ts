@@ -5,19 +5,19 @@
  */
 
 import { z } from "zod";
-import { gotoTool } from "./goto.js";
-import { actTool } from "./act.js";
-import { cachedActTool } from "./cached_act.js";
-import { extractTool } from "./extract.js";
-import { observeTool } from "./observe.js";
-import { summarizeTool } from "./summarize.js";
-import { writeFileTool, readFileTool } from "./fileSystem.js";
-import { newTabTool, switchTabTool, closeTabTool } from "./tabManagement.js";
-import { askUserTool } from "./askUser.js";
-import { finishTool } from "./finish.js";
-import { visionAnalyzeTool, clickAtCoordinatesTool } from "./vision.js";
-import { loadSkills } from "../skillManager.js";
-import { CustomTool } from "../types.js";
+import { gotoTool } from "@/src/tools/goto";
+import { actTool } from "@/src/tools/act";
+import { cachedActTool } from "@/src/tools/cached_act";
+import { extractTool } from "@/src/tools/extract";
+import { observeTool } from "@/src/tools/observe";
+import { summarizeTool } from "@/src/tools/summarize";
+import { writeFileTool, readFileTool } from "@/src/tools/fileSystem";
+import { newTabTool, switchTabTool, closeTabTool } from "@/src/tools/tabManagement";
+import { askUserTool } from "@/src/tools/askUser";
+import { finishTool } from "@/src/tools/finish";
+import { visionAnalyzeTool, clickAtCoordinatesTool } from "@/src/tools/vision";
+import { loadSkills } from "@/src/skillManager";
+import { CustomTool } from "@/src/types";
 
 /**
  * @description 静的に定義された、エージェントの基本的なツールセット。

@@ -5,8 +5,8 @@
  */
 
 import { LanguageModel, generateObject } from "ai";
-import { getChiefAgentPrompt, chiefAgentSchema } from "./prompts/chief.js";
-import { getSafePath } from "../utils.js";
+import { getChiefAgentPrompt, chiefAgentSchema } from "@/src/prompts/chief";
+import { getSafePath } from "@/utils";
 import fs from "fs/promises";
 
 /**

@@ -6,21 +6,29 @@
 import type { Stagehand } from "@browserbasehq/stagehand";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { taskAutomationAgent, getLlmInstance } from "./taskAutomationAgent.js";
-import { AgentState } from "./agentState.js";
-import { InterventionMode } from "./types.js";
-import { ToolCall } from "ai";
-import { planSubgoals } from "./chiefAgent.js";
+import { taskAutomationAgent, getLlmInstance } from "@/src/taskAutomationAgent";
+import { AgentState } from "@/src/agentState";
+import { InterventionMode } from "@/src/types";
+import { ToolCall, generateObject } from "ai";
+import { planSubgoals } from "@/src/chiefAgent";
+import {
+  progressEvaluationSchema,
+  getProgressEvaluationPrompt,
+} from "@/src/prompts/progressEvaluation";
+import { toolRegistry } from "@/src/tools/index";
 
 /**
  * ユーザーにy/nの確認を求める関数
  * @param prompt - 表示するプロンプトメッセージ
+ * @param rl - 共有のreadlineインターフェース
  * @returns ユーザーが 'y' を入力した場合は true, それ以外は false
  */
-export async function confirmAction(prompt: string): Promise<boolean> {
-  const rl = readline.createInterface({ input, output });
+export async function confirmAction(
+  prompt: string,
+  rl: readline.Interface,
+): Promise<boolean> {
   const answer = await rl.question(`${prompt} (y/n) `);
-  rl.close();
+  // この関数ではrlを閉じない
   return answer.toLowerCase() === "y";
 }
 
@@ -72,6 +80,11 @@ export async function requestUserApproval(
   plan: ToolCall<string, any>[],
 ): Promise<ToolCall<string, any>[] | null> {
   const mode = state.getInterventionMode();
+  const rl = state.rl;
+
+  if (!rl) {
+    throw new Error("Readline interface is not available for user approval.");
+  }
 
   console.log("\n--- 実行計画 ---");
   plan.forEach((step, index) => {
@@ -85,7 +98,6 @@ export async function requestUserApproval(
     return plan;
   }
 
-  const rl = readline.createInterface({ input, output });
   let prompt = "この計画で実行しますか？ (y/n";
   if (mode === "edit") {
     prompt += "/edit";
@@ -93,7 +105,7 @@ export async function requestUserApproval(
   prompt += ") ";
 
   const answer = await rl.question(prompt);
-  rl.close();
+  // この関数ではrlを閉じない
 
   switch (answer.toLowerCase()) {
     case "y":
@@ -104,7 +116,7 @@ export async function requestUserApproval(
       return null;
     case "edit":
       if (mode === "edit") {
-        return await startPlanEditor(plan);
+        return await startPlanEditor(state, plan);
       }
       console.log("無効な入力です。'y'または'n'で回答してください。");
       return requestUserApproval(state, plan);
@@ -116,16 +128,22 @@ export async function requestUserApproval(
 
 /**
  * 計画を対話的に編集するためのシンプルなCLIインターフェース
+ * @param state - AgentState
  * @param plan - 編集対象の計画
  * @returns 編集後の計画
  */
 async function startPlanEditor(
+  state: AgentState,
   plan: ToolCall<string, any>[],
 ): Promise<ToolCall<string, any>[]> {
+  const rl = state.rl;
+  if (!rl) {
+    throw new Error("Readline interface is not available for plan editor.");
+  }
+
   console.log("\n--- 計画編集モード ---");
   console.log("コマンド: list, delete <番号>, done");
   const currentPlan = [...plan];
-  const rl = readline.createInterface({ input, output });
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -151,7 +169,6 @@ async function startPlanEditor(
         break;
       }
       case "done":
-        rl.close();
         console.log("--- 編集完了 ---");
         return currentPlan;
       default:
@@ -173,6 +190,7 @@ export async function interactiveDebugConsole(
 ): Promise<void> {
   const page = stagehand.page;
   const rl = readline.createInterface({ input, output });
+  state.setReadlineInterface(rl); // 作成したrlをstateにセット
   console.log(helpMessage);
 
   // eslint-disable-next-line no-constant-condition
@@ -243,6 +261,38 @@ export async function interactiveDebugConsole(
               );
               break;
             }
+            console.log("🕵️‍♂️ タスク全体の進捗を評価中...");
+            const historySummary = JSON.stringify(state.getHistory().slice(-3));
+            const currentUrl = state.getActivePage().url();
+            const evalPrompt = getProgressEvaluationPrompt(
+              argument,
+              historySummary,
+              currentUrl,
+            );
+
+            const { object: progress } = await generateObject({
+              model: llm,
+              schema: progressEvaluationSchema,
+              prompt: evalPrompt,
+            });
+
+            if (progress.isTaskCompleted) {
+              console.log(
+                `✅ タスクは既に完了したと判断しました。理由: ${progress.reasoning}`,
+              );
+              // finishツールを呼び出して正常に終了させる
+              const finishTool = toolRegistry.get("finish");
+              if (finishTool) {
+                await finishTool.execute(
+                  state,
+                  { answer: progress.reasoning },
+                  llm,
+                  argument,
+                );
+              }
+              // ループを抜ける
+              break;
+            }
           }
           console.log("✅ 全てのサブゴールの処理が完了しました。");
           break;
@@ -251,7 +301,7 @@ export async function interactiveDebugConsole(
           console.log(
             "🔍 Playwright Inspectorを起動します。Inspectorを閉じると再開します...",
           );
-          await page.pause(); // Playwright Inspectorを起動して一時停止
+          await page.pause();
           console.log("▶️ Inspectorが閉じられました。");
           break;
 

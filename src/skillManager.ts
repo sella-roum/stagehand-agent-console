@@ -1,14 +1,14 @@
 import { LanguageModel, generateObject } from "ai";
-import { ExecutionRecord } from "./types.js";
+import { ExecutionRecord } from "@/src/types";
 import {
   getSkillGenerationPrompt,
   skillGenerationSchema,
-} from "./prompts/skillGeneration.js";
-import { getSafePath } from "../utils.js";
+} from "@/src/prompts/skillGeneration";
+import { getSafePath } from "@/utils";
 import fs from "fs/promises";
 import path from "path";
-import { AgentState } from "./agentState.js";
-import { availableTools } from "./tools/index.js";
+import { AgentState } from "@/src/agentState";
+import { availableTools } from "@/src/tools";
 
 /**
  * 動的に生成・ロードされるスキルのインターフェース
@@ -66,7 +66,7 @@ export async function generateAndSaveSkill(
 
       const filePath = getSafePath(`skills/${result.skill_name}.ts`);
       const fileContent = `
-import { AgentState } from "../agentState.js";
+import { AgentState } from "@/src/agentState";
 // @ts-nocheck
 // このファイルはAIによって自動生成されました。
 

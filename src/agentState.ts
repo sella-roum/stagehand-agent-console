@@ -5,7 +5,8 @@
  */
 
 import { Page, BrowserContext, Stagehand } from "@browserbasehq/stagehand";
-import { ExecutionRecord, TabInfo, InterventionMode } from "./types.js";
+import { ExecutionRecord, TabInfo, InterventionMode } from "@/src/types";
+import * as readline from "node:readline/promises";
 
 /**
  * エージェントのセッション全体の状態を管理するクラス。
@@ -23,6 +24,7 @@ export class AgentState {
   private context: BrowserContext;
   // ユーザーの介入モード
   private interventionMode: InterventionMode = "confirm"; // デフォルトは確認モード
+  public rl?: readline.Interface;
 
   /**
    * AgentStateの新しいインスタンスを生成します。
@@ -48,6 +50,14 @@ export class AgentState {
    */
   getHistory(): ExecutionRecord[] {
     return this.history;
+  }
+
+  /**
+   * 共有のreadlineインターフェースをセットします。
+   * @param rl - アプリケーション全体で共有するreadline.Interfaceインスタンス。
+   */
+  setReadlineInterface(rl: readline.Interface): void {
+    this.rl = rl;
   }
 
   /**

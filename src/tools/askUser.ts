@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { AgentState } from "../agentState.js";
+import { AgentState } from "@/src/agentState";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 

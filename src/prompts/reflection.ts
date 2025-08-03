@@ -1,5 +1,5 @@
-import { AgentState } from "../agentState.js";
-import { PlanStep, ReflectionResult } from "../types.js";
+import { AgentState } from "@/src/agentState";
+import { PlanStep, ReflectionResult } from "@/src/types";
 
 /**
  *

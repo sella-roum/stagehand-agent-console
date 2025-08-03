@@ -4,8 +4,8 @@
  */
 
 import { z } from "zod";
-import { AgentState } from "../agentState.js";
-import { actWithCache } from "../../utils.js";
+import { AgentState } from "@/src/agentState";
+import { actWithCache } from "@/utils";
 
 /**
  * `cached_act`ツールの入力スキーマ。

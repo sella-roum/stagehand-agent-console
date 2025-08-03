@@ -18,13 +18,13 @@ import { createGroq } from "@ai-sdk/groq";
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 
-import { AgentState } from "./agentState.js";
-import { getBasePrompt } from "./prompts/base.js";
-import { formatContext } from "./prompts/context.js";
-import { availableTools, toolRegistry } from "./tools/index.js";
-import { requestUserApproval } from "./debugConsole.js";
-import { generateAndSaveSkill } from "./skillManager.js";
-import { CustomTool } from "./types.js";
+import { AgentState } from "@/src/agentState";
+import { getBasePrompt } from "@/src/prompts/base";
+import { formatContext } from "@/src/prompts/context";
+import { availableTools, toolRegistry } from "@/src/tools/index";
+import { requestUserApproval } from "@/src/debugConsole";
+import { generateAndSaveSkill } from "@/src/skillManager";
+import { CustomTool } from "@/src/types";
 
 /**
  * プロジェクトで定義されたカスタムツール形式を、Vercel AI SDKが要求する形式に変換します。

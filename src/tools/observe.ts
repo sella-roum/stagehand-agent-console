@@ -5,8 +5,8 @@
  */
 
 import { z } from "zod";
-import { AgentState } from "../agentState.js";
-import { drawObserveOverlay, clearOverlays } from "../../utils.js";
+import { AgentState } from "@/src/agentState";
+import { drawObserveOverlay, clearOverlays } from "@/utils";
 
 /**
  * `observe`ツールの入力スキーマ。
