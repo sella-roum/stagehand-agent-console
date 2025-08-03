@@ -1,0 +1,44 @@
+.command-bar {
+  flex-shrink: 0;
+}
+
+.chat-input-container {
+  display: flex;
+  gap: 10px;
+  align-items: stretch; /* 高さを揃える */
+}
+
+.chat-input-container textarea {
+  flex-grow: 1;
+  background-color: #3a3a3a;
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 1em;
+  resize: vertical; /* 垂直方向のリサイズのみ許可 */
+  min-height: 40px; /* ボタンの高さと合わせるための最小値 */
+}
+
+.chat-input-container textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.5);
+}
+
+.chat-input-container button {
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  padding: 8px 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 1em;
+  transition: opacity 0.2s;
+}
+
+.chat-input-container button:hover {
+  opacity: 0.9;
+}

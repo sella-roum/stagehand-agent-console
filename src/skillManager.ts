@@ -9,6 +9,8 @@ import fs from "fs/promises";
 import path from "path";
 import { AgentState } from "./agentState.js";
 import { availableTools } from "./tools/index.js";
+import { eventHub } from "./eventHub.js";
+import { LogPayload } from "../types/protocol.js";
 
 /**
  * 動的に生成・ロードされるスキルのインターフェース
@@ -28,13 +30,29 @@ export async function generateAndSaveSkill(
   history: ExecutionRecord[],
   llm: LanguageModel,
 ): Promise<void> {
+  /**
+   * ログをCUIとGUIの両方に送信するためのヘルパー関数。
+   * @param message - ログメッセージ。
+   * @param level - ログの重要度レベル。
+   */
+  const log = (
+    message: string,
+    level: LogPayload["level"] = "info",
+  ) => {
+    eventHub.emit("agent:log", {
+      level,
+      message,
+      timestamp: new Date().toISOString(),
+    });
+  };
+
   // スキル生成に値する十分な履歴があるかチェック
   if (history.length < 3) {
-    console.log("💡 履歴が短いため、スキル生成はスキップします。");
+    log("💡 履歴が短いため、スキル生成はスキップします。");
     return;
   }
 
-  console.log("💡 スキル生成の可能性を分析中...");
+  log("💡 スキル生成の可能性を分析中...");
   const historyJson = JSON.stringify(history, null, 2);
 
   // 現在利用可能なすべてのツール（静的ツール＋動的スキル）の名前と説明を取得
@@ -52,14 +70,14 @@ export async function generateAndSaveSkill(
       schema: skillGenerationSchema,
     });
 
-    console.log(`  - 分析結果: ${result.reasoning}`);
+    log(`  - 分析結果: ${result.reasoning}`);
     if (
       result.should_generate_skill &&
       result.skill_name &&
       result.skill_code &&
       result.skill_description
     ) {
-      console.log(`✨ 新しいスキル '${result.skill_name}' を生成します。`);
+      log(`✨ 新しいスキル '${result.skill_name}' を生成します。`);
 
       const skillDir = path.dirname(getSafePath("skills/placeholder.ts"));
       await fs.mkdir(skillDir, { recursive: true });
@@ -77,12 +95,12 @@ export async function execute(state: AgentState, args: any): Promise<string> {
 }
 `;
       await fs.writeFile(filePath, fileContent);
-      console.log(
+      log(
         `✅ スキルを ${filePath} に保存しました。次回起動時から利用可能です。`,
       );
     }
   } catch (e: any) {
-    console.error(`❌ スキル生成中にエラーが発生しました: ${e.message}`);
+    log(`❌ スキル生成中にエラーが発生しました: ${e.message}`, "error");
   }
 }
 

@@ -25,6 +25,8 @@ import { availableTools, toolRegistry } from "./tools/index.js";
 import { requestUserApproval } from "./debugConsole.js";
 import { generateAndSaveSkill } from "./skillManager.js";
 import { CustomTool } from "./types.js";
+import { eventHub } from "./eventHub.js";
+import { LogPayload } from "../types/protocol.js";
 
 /**
  * プロジェクトで定義されたカスタムツール形式を、Vercel AI SDKが要求する形式に変換します。
@@ -103,16 +105,22 @@ async function setupGlobalEventHandlers(
 ) {
   stagehand.page.context().on("page", async (newPage) => {
     try {
-      console.log(
-        `\n🚨 新しいページ/ポップアップが検出されました: ${await newPage.title()}`,
-      );
+      const message = `\n🚨 新しいページ/ポップアップが検出されました: ${await newPage.title()}`;
+      eventHub.emit("agent:log", {
+        level: "system",
+        message,
+        timestamp: new Date().toISOString(),
+      });
+
       // ページが読み込まれるのを待つ
       await newPage
         .waitForLoadState("domcontentloaded", { timeout: 5000 })
         .catch(() => {});
 
       const screenshotBuffer = await newPage.screenshot();
-      const screenshotDataUrl = `data:image/png;base64,${screenshotBuffer.toString("base64")}`;
+      const screenshotDataUrl = `data:image/png;base64,${screenshotBuffer.toString(
+        "base64",
+      )}`;
 
       const popupAnalysisSchema = z.object({
         isUnwantedPopup: z
@@ -142,17 +150,27 @@ async function setupGlobalEventHandlers(
       });
 
       if (analysis.isUnwantedPopup) {
-        console.log(
-          `  ...不要なポップアップと判断しました。理由: ${analysis.reasoning}。自動的に閉じます。`,
-        );
+        const logMessage = `  ...不要なポップアップと判断しました。理由: ${analysis.reasoning}。自動的に閉じます。`;
+        eventHub.emit("agent:log", {
+          level: "system",
+          message: logMessage,
+          timestamp: new Date().toISOString(),
+        });
         await newPage.close();
       } else {
-        console.log(
-          `  ...メインタスクに関連するページと判断しました。理由: ${analysis.reasoning}`,
-        );
+        const logMessage = `  ...メインタスクに関連するページと判断しました。理由: ${analysis.reasoning}`;
+        eventHub.emit("agent:log", {
+          level: "system",
+          message: logMessage,
+          timestamp: new Date().toISOString(),
+        });
       }
     } catch (e: any) {
-      console.warn(`ポップアップハンドラでエラーが発生しました: ${e.message}`);
+      eventHub.emit("agent:log", {
+        level: "warn",
+        message: `ポップアップハンドラでエラーが発生しました: ${e.message}`,
+        timestamp: new Date().toISOString(),
+      });
     }
   });
 }
@@ -189,7 +207,26 @@ export async function taskAutomationAgent(
     toolRegistry: customToolRegistry = toolRegistry,
   } = options;
 
+  // // isGuiModeフラグを追加。isTestEnvironmentはGUIを持たないため、GUIモードではない。
+  // const isGuiMode = process.argv.includes("--no-cui") && !isTestEnvironment;
+
   const llm = getLlmInstance();
+
+  /**
+   * ログをCUIとGUIの両方に送信するためのヘルパー関数。
+   * @param message - ログメッセージ。
+   * @param level - ログの重要度レベル。
+   */
+  const log = (
+    message: string,
+    level: LogPayload["level"] = "info",
+  ) => {
+    eventHub.emit("agent:log", {
+      level,
+      message,
+      timestamp: new Date().toISOString(),
+    });
+  };
 
   // Visionモードが有効な場合、ポップアップを自動処理するイベントハンドラを設定
   if (process.env.AGENT_MODE === "vision") {
@@ -207,7 +244,7 @@ export async function taskAutomationAgent(
 
   // 思考と行動のメインループ
   for (let i = 0; i < maxLoops; i++) {
-    console.log(`\n[ループ ${i + 1}] 🧠 AIが次の行動を思考中...`);
+    log(`\n[ループ ${i + 1}] 🧠 AIが次の行動を思考中...`, "system");
 
     // 1. 状況認識: 現在のページ情報を収集
     const summary = await state
@@ -226,7 +263,7 @@ export async function taskAutomationAgent(
 
     // サブゴール完了と判断した場合
     if (finishReason === "stop" && text) {
-      console.log(`\n🎉 サブゴール完了！ AIの所感: ${text}`);
+      log(`\n🎉 サブゴール完了！ AIの所感: ${text}`, "system");
       // テスト環境でなければ、行動履歴から新しいスキルを生成しようと試みる
       if (!isTestEnvironment) {
         await generateAndSaveSkill(state.getHistory(), llm);
@@ -235,8 +272,9 @@ export async function taskAutomationAgent(
     }
 
     if (!toolCalls || toolCalls.length === 0) {
-      console.log(
+      log(
         "🤔 AIがツールを呼び出しませんでした。サブゴールを完了とみなします。",
+        "system",
       );
       return true;
     }
@@ -246,8 +284,9 @@ export async function taskAutomationAgent(
       ? toolCalls
       : await requestUserApproval(state, toolCalls);
     if (!approvedPlan) {
-      console.log(
+      log(
         "ユーザーが計画を拒否しました。サブゴールの実行を中断します。",
+        "warn",
       );
       return false;
     }
@@ -268,7 +307,7 @@ export async function taskAutomationAgent(
         const tool = customToolRegistry.get(toolCall.toolName);
         if (!tool) {
           const errorMsg = `不明なツールです: ${toolCall.toolName}`;
-          console.error(`  ❌ エラー: ${errorMsg}`);
+          log(`❌ エラー: ${errorMsg}`, "error");
           state.addHistory({ toolCall, error: errorMsg });
           return {
             toolCallId: toolCall.toolCallId,
@@ -278,7 +317,7 @@ export async function taskAutomationAgent(
         }
         try {
           const { toolName, args } = toolCall;
-          console.log(`  ⚡️ 実行中: ${toolName}(${JSON.stringify(args)})`);
+          log(`⚡️ 実行中: ${toolName}(${JSON.stringify(args)})`);
 
           const result = await tool.execute(state, args, llm, originalTask);
 
@@ -286,7 +325,7 @@ export async function taskAutomationAgent(
             typeof result === "object"
               ? JSON.stringify(result, null, 2)
               : result;
-          console.log(`  ✅ 成功: ${resultLog.substring(0, 200)}...`);
+          log(`✅ 成功: ${resultLog.substring(0, 200)}...`);
 
           state.addHistory({ toolCall, result });
           return {
@@ -295,7 +334,7 @@ export async function taskAutomationAgent(
             result,
           };
         } catch (error: any) {
-          console.error(`  ❌ エラー (${toolCall.toolName}): ${error.message}`);
+          log(`❌ エラー (${toolCall.toolName}): ${error.message}`, "error");
           state.addHistory({ toolCall, error: error.message });
           return {
             toolCallId: toolCall.toolCallId,
@@ -332,8 +371,9 @@ export async function taskAutomationAgent(
     await new Promise((resolve) => setTimeout(resolve, 1000)); // ページ遷移後の安定化を待つ
   }
 
-  console.warn(
+  log(
     `⚠️ 最大試行回数（${maxLoops}回）に達したため、処理を中断しました。`,
+    "warn",
   );
   return false;
 }

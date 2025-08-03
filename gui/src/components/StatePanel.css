@@ -1,0 +1,26 @@
+.state-content {
+  font-size: 0.9em;
+}
+
+.state-item {
+  margin-bottom: 10px;
+}
+
+.state-item strong {
+  color: var(--primary-color);
+}
+
+.state-item span {
+  word-break: break-all;
+}
+
+.state-item ul {
+  list-style: none;
+  padding-left: 10px;
+  margin: 4px 0 0 0;
+}
+
+.state-item li.active {
+  font-weight: bold;
+  color: var(--success-color);
+}
