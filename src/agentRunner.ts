@@ -8,7 +8,7 @@ import { Stagehand } from "@browserbasehq/stagehand";
 import { AgentState } from "@/src/agentState";
 import { planSubgoals } from "@/src/chiefAgent";
 import { taskAutomationAgent, getLlmInstance } from "@/src/taskAutomationAgent";
-import { availableTools } from "@/src/tools/index";
+import { availableTools } from "@/src/tools";
 import { AgentExecutionResult, CustomTool } from "@/src/types";
 import { generateObject } from "ai";
 import {
@@ -82,7 +82,19 @@ export async function runAgentTask(
     }
 
     console.log("🕵️‍♂️ タスク全体の進捗を評価中...");
-    const historySummary = JSON.stringify(state.getHistory().slice(-3)); // 直近3件の履歴を要約
+    const historySummary = JSON.stringify(
+      state
+        .getHistory()
+        .slice(-3)
+        .map((record) => ({
+          toolName: record.toolCall.toolName,
+          args: record.toolCall.args,
+          result:
+            typeof record.result === "string"
+              ? record.result.substring(0, 200)
+              : record.result,
+        })),
+    );
     const currentUrl = state.getActivePage().url();
     const evalPrompt = getProgressEvaluationPrompt(
       task,

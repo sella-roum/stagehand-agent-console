@@ -1,0 +1,11 @@
+# ビルド成果物
+dist
+
+# GUI関連
+gui
+
+# エージェントの作業ディレクトリ
+workspace
+
+# Node.jsの依存関係
+node_modules

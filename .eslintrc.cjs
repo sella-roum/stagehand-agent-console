@@ -2,7 +2,6 @@ module.exports = {
   root: true,
   parser: "@typescript-eslint/parser",
   plugins: ["@typescript-eslint", "jsdoc"],
-  ignores: ["dist", "gui", "workspace"],
   extends: [
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended",
