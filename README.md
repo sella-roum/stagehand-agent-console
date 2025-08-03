@@ -49,7 +49,7 @@ graph TD
     end
 
     subgraph System
-        J{全サブゴール完了？}
+        J{全サブゴール完了 or タスク達成？}
         K[タスク完了]
     end
 
