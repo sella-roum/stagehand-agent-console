@@ -20,7 +20,7 @@ export const chiefAgentSchema = z.object({
 });
 
 /**
- * 司令塔エージェントに与えるプロンプトを生成します。
+ * 司令塔エージェントに与える初期計画用のプロンプトを生成します。
  * @param task - ユーザーから与えられた高レベルなタスク文字列。
  * @returns LLMに渡すためのプロンプト文字列。
  */
@@ -38,5 +38,54 @@ export function getChiefAgentPrompt(task: string): string {
 "${task}"
 
 上記のタスクを達成するためのサブゴールリストを生成してください。
+`;
+}
+
+/**
+ * 司令塔エージェントに再計画を促すプロンプトを生成します。
+ * @param task - ユーザーの最終目標。
+ * @param context - 現在のエージェントの状況（URL、記憶など）。
+ * @param completedSubgoals - 既に完了したサブゴールのリスト。
+ * @param failedSubgoal - 失敗したサブゴール。
+ * @param errorContext - 発生したエラーに関する情報。
+ * @returns LLMに渡すための再計画用プロンプト文字列。
+ */
+export function getChiefAgentReplanPrompt(
+  task: string,
+  context: string,
+  completedSubgoals: string[],
+  failedSubgoal: string,
+  errorContext: string,
+): string {
+  return `
+あなたは、予期せぬ事態に対応する能力に長けた、経験豊富なAIプロジェクトマネージャーです。
+実行中のタスクがエラーにより停滞しています。現在の状況を分析し、最終目標を達成するための新しい計画を立て直してください。
+
+# ユーザーの最終目標
+"${task}"
+
+# 現在の状況
+${context}
+
+# これまでに完了したサブゴール
+${
+  completedSubgoals.length > 0
+    ? completedSubgoals.map((g, i) => `${i + 1}. ${g}`).join("\n")
+    : "なし"
+}
+
+# 失敗したサブゴール
+"${failedSubgoal}"
+
+# 失敗の原因となったエラーの要約
+${errorContext}
+
+# あなたのタスク
+1.  **状況分析:** なぜ元の計画が失敗したのかを分析してください。現在のページの状況が、当初の計画の前提と異なっている可能性があります。
+2.  **再計画:** 上記の分析に基づき、**残りのタスクを達成するための新しいサブゴールリスト**を生成してください。
+    - 完了済みのサブゴールを繰り返す必要はありません。
+    - 失敗したサブゴールを別の角度から達成する方法を考えてください。
+    - 場合によっては、全く異なるアプローチが必要になるかもしれません。
+3.  **出力の厳守:** 必ず指定されたJSON形式で、新しいサブゴールのリストと、その計画に至った理由を出力してください。
 `;
 }

@@ -5,6 +5,11 @@
 
 import { z } from "zod";
 import { AgentState } from "@/src/agentState";
+import {
+  InvalidToolArgumentError,
+  NavigationTimeoutError,
+} from "@/src/errors";
+import { PreconditionResult } from "@/src/types";
 
 // --- newTab Tool ---
 
@@ -31,14 +36,28 @@ export const newTabTool = {
    */
   execute: async (
     state: AgentState,
-    { url }: z.infer<typeof newTabSchema>,
+    args: z.infer<typeof newTabSchema>,
   ): Promise<string> => {
+    const { url } = args;
     const page = state.getActivePage();
     const newPage = await page.context().newPage();
-    await newPage.goto(url);
-    // 新しいタブが開かれたので、AgentStateのページリストを更新する
-    await state.updatePages();
-    return `新しいタブで ${url} を開きました。`;
+    try {
+      await newPage.goto(url);
+      // 新しいタブが開かれたので、AgentStateのページリストを更新する
+      await state.updatePages();
+      return `新しいタブで ${url} を開きました。`;
+    } catch (error: any) {
+      // new_tab内のgoto失敗をハンドリング
+      if (error.name === "TimeoutError") {
+        throw new NavigationTimeoutError(
+          `新しいタブでのURLへの移動がタイムアウトしました: ${url}。`,
+          "new_tab",
+          args,
+          url,
+        );
+      }
+      throw error;
+    }
   },
 };
 
@@ -59,6 +78,40 @@ export const switchTabTool = {
   description: "指定されたインデックスのタブに切り替えます。",
   schema: switchTabSchema,
   /**
+   * switch_tabの事前条件チェック
+   * @param state
+   * @param args
+   * @returns 事前条件の結果。成功した場合は { success: true }、失敗した場合は { success: false, message: string }。
+   */
+  precondition: async (
+    state: AgentState,
+    args: z.infer<typeof switchTabSchema>,
+  ): Promise<PreconditionResult> => {
+    const { tabIndex } = args;
+    const tabs = await state.getTabInfo();
+    if (tabs.length <= 1) {
+      return {
+        success: false,
+        message: "切り替えるべき他のタブが存在しません。タブは1つだけです。",
+      };
+    }
+    if (tabIndex < 0 || tabIndex >= tabs.length) {
+      return {
+        success: false,
+        message: `無効なタブインデックスです: ${tabIndex}。利用可能なインデックスは 0 から ${
+          tabs.length - 1
+        } です。`,
+      };
+    }
+    if (tabs[tabIndex].isActive) {
+      return {
+        success: false,
+        message: `タブ ${tabIndex} は既にアクティブです。切り替える必要はありません。`,
+      };
+    }
+    return { success: true };
+  },
+  /**
    * `switch_tab`ツールを実行します。
    * @param state - 現在のエージェントの状態。
    * @param args - `switchTabSchema`に基づいた引数。
@@ -67,13 +120,23 @@ export const switchTabTool = {
    */
   execute: async (
     state: AgentState,
-    { tabIndex }: z.infer<typeof switchTabSchema>,
+    args: z.infer<typeof switchTabSchema>,
   ): Promise<string> => {
-    const targetPage = state.getPageAtIndex(tabIndex);
-    await targetPage.bringToFront();
-    // アクティブなタブが変更されたので、AgentStateの状態を更新する
-    await state.updatePages();
-    return `タブ ${tabIndex} に切り替えました。`;
+    const { tabIndex } = args;
+    try {
+      const targetPage = state.getPageAtIndex(tabIndex);
+      await targetPage.bringToFront();
+      // アクティブなタブが変更されたので、AgentStateの状態を更新する
+      await state.updatePages();
+      return `タブ ${tabIndex} に切り替えました。`;
+    } catch (error: any) {
+      // 無効なインデックスなどのエラーを捕捉
+      throw new InvalidToolArgumentError(
+        `タブの切り替えに失敗しました: ${error.message}`,
+        "switch_tab",
+        args,
+      );
+    }
   },
 };
 
@@ -94,6 +157,34 @@ export const closeTabTool = {
   description: "指定されたインデックスのタブを閉じます。",
   schema: closeTabSchema,
   /**
+   * close_tabの事前条件チェック
+   * @param state
+   * @param args
+   * @returns 事前条件の結果。成功した場合は { success: true }、失敗した場合は { success: false, message: string }。
+   */
+  precondition: async (
+    state: AgentState,
+    args: z.infer<typeof closeTabSchema>,
+  ): Promise<PreconditionResult> => {
+    const { tabIndex } = args;
+    const tabs = await state.getTabInfo();
+    if (tabs.length <= 1) {
+      return {
+        success: false,
+        message: "最後のタブは閉じることができません。",
+      };
+    }
+    if (tabIndex < 0 || tabIndex >= tabs.length) {
+      return {
+        success: false,
+        message: `無効なタブインデックスです: ${tabIndex}。利用可能なインデックスは 0 から ${
+          tabs.length - 1
+        } です。`,
+      };
+    }
+    return { success: true };
+  },
+  /**
    * `close_tab`ツールを実行します。
    * @param state - 現在のエージェントの状態。
    * @param args - `closeTabSchema`に基づいた引数。
@@ -102,14 +193,24 @@ export const closeTabTool = {
    */
   execute: async (
     state: AgentState,
-    { tabIndex }: z.infer<typeof closeTabSchema>,
+    args: z.infer<typeof closeTabSchema>,
   ): Promise<string> => {
-    const pageToClose = state.getPageAtIndex(tabIndex);
-    if (pageToClose && !pageToClose.isClosed()) {
-      await pageToClose.close();
+    const { tabIndex } = args;
+    try {
+      const pageToClose = state.getPageAtIndex(tabIndex);
+      if (pageToClose && !pageToClose.isClosed()) {
+        await pageToClose.close();
+      }
+      // タブが閉じられたので、AgentStateのページリストを更新する
+      await state.updatePages();
+      return `タブ ${tabIndex} を閉じました。`;
+    } catch (error: any) {
+      // 無効なインデックスなどのエラーを捕捉
+      throw new InvalidToolArgumentError(
+        `タブを閉じるのに失敗しました: ${error.message}`,
+        "close_tab",
+        args,
+      );
     }
-    // タブが閉じられたので、AgentStateのページリストを更新する
-    await state.updatePages();
-    return `タブ ${tabIndex} を閉じました。`;
   },
 };

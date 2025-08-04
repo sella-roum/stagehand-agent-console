@@ -42,10 +42,26 @@ export type AgentExecutionResult = {
   reasoning: string;
 };
 
+/**
+ * 事前条件チェックの結果を表す型。
+ * 成功した場合は { success: true }、失敗した場合は理由を含むメッセージを返す。
+ */
+export type PreconditionResult =
+  | { success: true }
+  | { success: false; message: string };
+
 export type CustomTool = {
   name: string;
   description: string;
   schema: z.ZodObject<any, any, any, any, any>;
+  /**
+   * ツール実行前に、そのツールが現在の状況で実行可能かをチェックするオプショナルな関数。
+   * 失敗した場合は、その理由を含むメッセージを返す。
+   */
+  precondition?: (
+    state: AgentState,
+    args: any,
+  ) => Promise<PreconditionResult>;
   execute: (
     state: AgentState,
     args: any,

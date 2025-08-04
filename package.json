@@ -7,7 +7,8 @@
     "postinstall": "playwright install",
     "test:agent": "playwright test tests/agent.spec.ts",
     "lint": "eslint . --ext .ts",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "skill:review": "tsx scripts/reviewSkills.ts"
   },
   "dependencies": {
     "@ai-sdk/groq": "^1.2.9",
@@ -31,7 +32,9 @@
     "@typescript-eslint/parser": "^7.13.1",
     "eslint": "^8.57.0",
     "eslint-plugin-jsdoc": "^48.5.0",
-    "prettier": "^3.3.2"
+    "prettier": "^3.3.2",
+    "inquirer": "^9.2.23",
+    "@types/inquirer": "^9.0.7"
   },
   "packageManager": "pnpm@9.15.0+sha512.76e2379760a4328ec4415815bcd6628dee727af3779aaa4c914e3944156c4299921a89f976381ee107d41f12cfa4b66681ca9c718f0668fa0831ed4c6d8ba56c"
 }

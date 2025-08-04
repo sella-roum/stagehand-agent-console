@@ -7,6 +7,10 @@
 import { Page, BrowserContext, Stagehand } from "@browserbasehq/stagehand";
 import { ExecutionRecord, TabInfo, InterventionMode } from "@/src/types";
 import * as readline from "node:readline/promises";
+import fs from "fs/promises";
+import { getSafePath } from "@/utils";
+
+const MEMORY_FILE = "memory.json";
 
 /**
  * エージェントのセッション全体の状態を管理するクラス。
@@ -25,6 +29,12 @@ export class AgentState {
   // ユーザーの介入モード
   private interventionMode: InterventionMode = "confirm"; // デフォルトは確認モード
   public rl?: readline.Interface;
+  // 現在のサブゴールに関連する短期的な事実を保持するワーキングメモリ
+  private workingMemory: string[] = [];
+  // タスク全体を通じて不変の重要な事実を保持する長期記憶
+  private longTermMemory: string[] = [];
+  // 完了したサブゴールを記録する
+  private completedSubgoals: string[] = [];
 
   /**
    * AgentStateの新しいインスタンスを生成します。
@@ -82,6 +92,104 @@ export class AgentState {
    */
   public getInterventionMode(): InterventionMode {
     return this.interventionMode;
+  }
+
+  /**
+   * ワーキングメモリに事実を追加します。
+   * @param fact - 現在のサブゴールに関連する情報。
+   */
+  public addToWorkingMemory(fact: string): void {
+    this.workingMemory.push(fact);
+  }
+
+  /**
+   * ワーキングメモリの内容を取得します。
+   * @returns ワーキングメモリの事実の配列。
+   */
+  public getWorkingMemory(): string[] {
+    return this.workingMemory;
+  }
+
+  /**
+   * ワーキングメモリをクリアします。通常、サブゴールが完了した際に呼び出されます。
+   */
+  public clearWorkingMemory(): void {
+    this.workingMemory = [];
+  }
+
+  /**
+   * 長期記憶に事実を追加します。重複は自動的に排除されます。
+   * @param fact - タスク全体で重要な、永続化すべき情報。
+   */
+  public addToLongTermMemory(fact: string): void {
+    if (!this.longTermMemory.includes(fact)) {
+      this.longTermMemory.push(fact);
+    }
+  }
+
+  /**
+   * 長期記憶の内容を取得します。
+   * @returns 長期記憶の事実の配列。
+   */
+  public getLongTermMemory(): string[] {
+    return this.longTermMemory;
+  }
+
+  /**
+   * 完了したサブゴールのリストに新しいゴールを追加します。
+   * @param subgoal - 完了したサブゴールの文字列。
+   */
+  public addCompletedSubgoal(subgoal: string): void {
+    this.completedSubgoals.push(subgoal);
+  }
+
+  /**
+   * 完了したすべてのサブゴールのリストを取得します。
+   * @returns 完了したサブゴールの文字列の配列。
+   */
+  public getCompletedSubgoals(): string[] {
+    return this.completedSubgoals;
+  }
+
+  /**
+   * 長期記憶をファイルに保存します。
+   * ワーキングメモリはセッション固有のため保存しません。
+   */
+  async saveMemory(): Promise<void> {
+    try {
+      const memoryPath = getSafePath(MEMORY_FILE);
+      const dataToSave = {
+        longTermMemory: this.longTermMemory,
+      };
+      const data = JSON.stringify(dataToSave, null, 2);
+      await fs.writeFile(memoryPath, data);
+      console.log(`🧠 記憶を ${memoryPath} に保存しました。`);
+    } catch (error) {
+      console.warn("⚠️ 記憶の保存に失敗しました:", error);
+    }
+  }
+
+  /**
+   * 長期記憶をファイルから読み込みます。
+   * アプリケーション起動時に呼び出されることを想定しています。
+   */
+  async loadMemory(): Promise<void> {
+    try {
+      const memoryPath = getSafePath(MEMORY_FILE);
+      const data = await fs.readFile(memoryPath, "utf-8");
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed.longTermMemory)) {
+        this.longTermMemory = parsed.longTermMemory;
+        console.log(
+          `🧠 ${this.longTermMemory.length}件の記憶を ${memoryPath} から読み込みました。`,
+        );
+      }
+    } catch (error: any) {
+      if (error.code !== "ENOENT") {
+        // ファイルが存在しない(ENOENT)場合は初回起動なのでエラー表示しない
+        console.warn("⚠️ 記憶の読み込みに失敗しました:", error);
+      }
+    }
   }
 
   /**

@@ -6,6 +6,7 @@
 
 import { z } from "zod";
 import { AgentState } from "@/src/agentState";
+import { NavigationTimeoutError } from "@/src/errors";
 
 /**
  * `goto`ツールの入力スキーマ。
@@ -31,10 +32,23 @@ export const gotoTool = {
    */
   execute: async (
     state: AgentState,
-    { url }: z.infer<typeof gotoSchema>,
+    args: z.infer<typeof gotoSchema>,
   ): Promise<string> => {
+    const { url } = args;
     const page = state.getActivePage();
-    await page.goto(url);
-    return `正常に ${url} に移動しました。`;
+    try {
+      await page.goto(url);
+      return `正常に ${url} に移動しました。`;
+    } catch (error: any) {
+      if (error.name === "TimeoutError") {
+        throw new NavigationTimeoutError(
+          `URLへの移動がタイムアウトしました: ${url}。URLが正しいか、またはネットワークに問題がないか確認してください。`,
+          "goto",
+          args,
+          url,
+        );
+      }
+      throw error;
+    }
   },
 };
