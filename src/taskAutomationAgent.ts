@@ -36,7 +36,11 @@ class ReplanNeededError extends Error {
   public originalError: Error;
   public failedToolCall: ToolCall<string, any>;
 
-  constructor(message: string, originalError: Error, failedToolCall: ToolCall<string, any>) {
+  constructor(
+    message: string,
+    originalError: Error,
+    failedToolCall: ToolCall<string, any>,
+  ) {
     super(message);
     this.name = "ReplanNeededError";
     this.originalError = originalError;

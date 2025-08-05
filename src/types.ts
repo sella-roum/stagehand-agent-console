@@ -58,10 +58,7 @@ export type CustomTool = {
    * ツール実行前に、そのツールが現在の状況で実行可能かをチェックするオプショナルな関数。
    * 失敗した場合は、その理由を含むメッセージを返す。
    */
-  precondition?: (
-    state: AgentState,
-    args: any,
-  ) => Promise<PreconditionResult>;
+  precondition?: (state: AgentState, args: any) => Promise<PreconditionResult>;
   execute: (
     state: AgentState,
     args: any,

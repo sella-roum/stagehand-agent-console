@@ -37,9 +37,7 @@ export function getMemoryUpdatePrompt(
     JSON.parse(subgoalHistoryJson);
   } catch (e: any) {
     // ログに出力するが、処理は続行させる
-    console.warn(
-      `Invalid JSON provided for subgoal history: ${e.message}`,
-    );
+    console.warn(`Invalid JSON provided for subgoal history: ${e.message}`);
   }
 
   return `

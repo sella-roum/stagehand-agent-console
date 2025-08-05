@@ -122,7 +122,9 @@ async function reviewSkills() {
           // ファイルが存在しない場合は正常に続行
         }
         await fs.rename(filePath, destPath);
-        console.log(chalk.green(`👍 スキル '${file}' を承認し、移動しました。`));
+        console.log(
+          chalk.green(`👍 スキル '${file}' を承認し、移動しました。`),
+        );
       } else if (action === "reject") {
         // 削除する代わりにrejectedディレクトリに移動
         const destPath = path.join(REJECTED_DIR, file);
@@ -137,7 +139,9 @@ async function reviewSkills() {
       }
     }
 
-    console.log(chalk.bold.green("\n✨ 全てのスキル候補のレビューが完了しました。"));
+    console.log(
+      chalk.bold.green("\n✨ 全てのスキル候補のレビューが完了しました。"),
+    );
   } catch (error: any) {
     if (error.code === "ENOENT") {
       console.log(

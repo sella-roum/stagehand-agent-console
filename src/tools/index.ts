@@ -12,7 +12,11 @@ import { extractTool } from "@/src/tools/extract";
 import { observeTool } from "@/src/tools/observe";
 import { summarizeTool } from "@/src/tools/summarize";
 import { writeFileTool, readFileTool } from "@/src/tools/fileSystem";
-import { newTabTool, switchTabTool, closeTabTool } from "@/src/tools/tabManagement";
+import {
+  newTabTool,
+  switchTabTool,
+  closeTabTool,
+} from "@/src/tools/tabManagement";
 import { askUserTool } from "@/src/tools/askUser";
 import { finishTool } from "@/src/tools/finish";
 import { visionAnalyzeTool, clickAtCoordinatesTool } from "@/src/tools/vision";

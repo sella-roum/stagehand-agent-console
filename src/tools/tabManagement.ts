@@ -5,10 +5,7 @@
 
 import { z } from "zod";
 import { AgentState } from "@/src/agentState";
-import {
-  InvalidToolArgumentError,
-  NavigationTimeoutError,
-} from "@/src/errors";
+import { InvalidToolArgumentError, NavigationTimeoutError } from "@/src/errors";
 import { PreconditionResult } from "@/src/types";
 
 // --- newTab Tool ---

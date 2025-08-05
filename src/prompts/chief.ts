@@ -57,9 +57,7 @@ interface ReplanPromptParams {
  * @param params - 再計画に必要なパラメータを含むオブジェクト。
  * @returns LLMに渡すための再計画用プロンプト文字列。
  */
-export function getChiefAgentReplanPrompt(
-  params: ReplanPromptParams,
-): string {
+export function getChiefAgentReplanPrompt(params: ReplanPromptParams): string {
   const { task, context, completedSubgoals, failedSubgoal, errorContext } =
     params;
   return `

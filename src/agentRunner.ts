@@ -70,19 +70,23 @@ export async function runAgentTask(
     if (!subgoal) continue;
 
     console.log(
-      `\n▶️ サブゴール ${
-        completedSubgoals.length + 1
-      } 実行中: "${subgoal}"`,
+      `\n▶️ サブゴール ${completedSubgoals.length + 1} 実行中: "${subgoal}"`,
     );
     const historyStartIndex = state.getHistory().length;
 
     try {
-      const success = await taskAutomationAgent(subgoal, stagehand, state, task, {
-        isTestEnvironment: true,
-        maxLoops: maxLoopsPerSubgoal,
-        tools: testSafeTools,
-        toolRegistry: testSafeToolRegistry,
-      });
+      const success = await taskAutomationAgent(
+        subgoal,
+        stagehand,
+        state,
+        task,
+        {
+          isTestEnvironment: true,
+          maxLoops: maxLoopsPerSubgoal,
+          tools: testSafeTools,
+          toolRegistry: testSafeToolRegistry,
+        },
+      );
 
       if (!success) {
         throw new Error(`サブゴール "${subgoal}" の実行に失敗しました。`);

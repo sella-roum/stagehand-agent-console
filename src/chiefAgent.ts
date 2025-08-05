@@ -50,7 +50,10 @@ export async function planSubgoals(
     const summary = await state
       .getActivePage()
       .extract()
-      .then((e) => e.page_text?.substring(0, PAGE_SUMMARY_LIMIT) || "ページ情報なし")
+      .then(
+        (e) =>
+          e.page_text?.substring(0, PAGE_SUMMARY_LIMIT) || "ページ情報なし",
+      )
       .catch(() => "ページ情報なし");
     const context = await formatContext(state, summary);
     const completedSubgoals = state.getCompletedSubgoals();
