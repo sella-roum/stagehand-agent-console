@@ -40,48 +40,49 @@
 このプロセスを図で示すと以下のようになります。
 
 ```mermaid
-graph TD
-    subgraph User Interaction
-        A[ユーザーからの高レベルなタスク]
-    end
+flowchart LR
+  subgraph User [ユーザー操作]
+    A[ユーザーからの高レベルなタスク]
+  end
 
-    subgraph Chief Agent [司令塔エージェント]
-        B(タスクを分解して計画)
-        B_replan(現在の状況を基に再計画)
-    end
+  subgraph Chief [司令塔エージェント]
+    B[タスクを分解して計画]
+    B_replan[再計画を実施]
+  end
 
-    subgraph Task Automation Agent [実行エージェント]
-        C{サブゴール実行ループ}
-        D[状況認識]
-        E[ツール選択]
-        F[実行]
-        G{検証}
-        H[反省: エラー分析]
-        I[代替案考案]
-        I_fail{自己修復の限界？}
-    end
+  subgraph Task [実行エージェント]
+    C{サブゴール実行ループ}
+    D[状況認識]
+    E[ツール選択]
+    F[実行]
+    G{検証}
+    H[反省／エラー分析]
+    I[代替案考案]
+    I_fail{自己修復限界？}
+  end
 
-    subgraph System
-        J{全サブゴール完了 or タスク達成？}
-        K[タスク完了]
-    end
+  subgraph System [システム判定]
+    J{すべてのサブゴール完了orタスク達成？}
+    K[タスク完了]
+  end
 
-    A --> B
-    B -->|次のサブゴール| C
-    C --> D
-    D --> E
-    E --> F
-    F --> G
-    G -- 成功 --> J
-    G -- 失敗 --> H
-    H --> I
-    I --> I_fail
-    I_fail -- No --> C
-    I_fail -- Yes -->|再計画を要求| B_replan
-    B_replan -->|新しい計画| C
+  A --> B
+  B --> C
+  C --> D
+  D --> E
+  E --> F
+  F --> G
 
-    J -- No --> B
-    J -- Yes --> K
+  G -->|成功| J
+  G -->|失敗| H
+  H --> I
+  I --> I_fail
+  I_fail -->|いいえ| C
+  I_fail -->|はい| B_replan
+  B_replan --> C
+
+  J -->|いいえ| B
+  J -->|はい| K
 ```
 
 ## 🛠️ セットアップ
