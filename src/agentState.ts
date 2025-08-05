@@ -122,9 +122,16 @@ export class AgentState {
    * @param fact - タスク全体で重要な、永続化すべき情報。
    */
   public addToLongTermMemory(fact: string): void {
-    if (!this.longTermMemory.includes(fact)) {
+    // 堅牢な重複チェック
+    const normalizedFact = fact.trim().toLowerCase();
+    const isDuplicate = this.longTermMemory.some(
+      (existing) => existing.trim().toLowerCase() === normalizedFact,
+    );
+    if (!isDuplicate) {
       this.longTermMemory.push(fact);
     }
+    // TODO: 将来的な改善として、長期記憶のサイズに上限を設け、
+    // 古い情報や重要度の低い情報を削除する戦略（例: FIFO, LRU, LLMによる要約）を検討する。
   }
 
   /**

@@ -19,6 +19,13 @@ const APPROVED_DIR = path.resolve(
   "skills",
   "approved",
 );
+// 拒否されたスキルを保存するディレクトリ
+const REJECTED_DIR = path.resolve(
+  process.cwd(),
+  "workspace",
+  "skills",
+  "rejected",
+);
 
 /**
  * スキルレビューCLIのメイン関数。
@@ -40,8 +47,9 @@ async function reviewSkills() {
 
     console.log(`🔍 ${files.length}件のスキル候補が見つかりました。`);
 
-    // 承認済みディレクトリがなければ作成
+    // 承認済み・拒否済みディレクトリがなければ作成
     await fs.mkdir(APPROVED_DIR, { recursive: true });
+    await fs.mkdir(REJECTED_DIR, { recursive: true });
 
     // 各ファイルを順番にレビュー
     for (const file of files) {
@@ -72,8 +80,12 @@ async function reviewSkills() {
         await fs.rename(filePath, destPath);
         console.log(chalk.green(`👍 スキル '${file}' を承認し、移動しました。`));
       } else if (action === "reject") {
-        await fs.unlink(filePath);
-        console.log(chalk.red(`🗑️ スキル '${file}' を拒否し、削除しました。`));
+        // 削除する代わりにrejectedディレクトリに移動
+        const destPath = path.join(REJECTED_DIR, file);
+        await fs.rename(filePath, destPath);
+        console.log(
+          chalk.red(`🗑️ スキル '${file}' を拒否し、rejectedディレクトリに移動しました。`),
+        );
       } else {
         console.log(chalk.yellow(`⏭️ スキル '${file}' をスキップしました。`));
       }

@@ -245,6 +245,8 @@ export async function interactiveDebugConsole(
           const llm = getLlmInstance();
           let subgoals = await planSubgoals(argument, llm);
           const completedSubgoals: string[] = [];
+          let replanCount = 0;
+          const MAX_REPLAN_ATTEMPTS = 3;
 
           while (subgoals.length > 0) {
             const currentSubgoal = subgoals.shift()!;
@@ -272,8 +274,9 @@ export async function interactiveDebugConsole(
               completedSubgoals.push(currentSubgoal);
 
               console.log("🕵️‍♂️ タスク全体の進捗を評価中...");
+              const HISTORY_WINDOW_SIZE = 3;
               const historySummary = JSON.stringify(
-                state.getHistory().slice(-3),
+                state.getHistory().slice(-HISTORY_WINDOW_SIZE),
               );
               const currentUrl = state.getActivePage().url();
               const evalPrompt = getProgressEvaluationPrompt(
@@ -305,6 +308,13 @@ export async function interactiveDebugConsole(
               }
             } catch (error: any) {
               if (error.name === "ReplanNeededError") {
+                if (replanCount >= MAX_REPLAN_ATTEMPTS) {
+                  console.error(
+                    `再計画の試行回数が上限（${MAX_REPLAN_ATTEMPTS}回）に達しました。処理を中断します。`,
+                  );
+                  break;
+                }
+                replanCount++;
                 console.log(
                   "🚨 再計画が必要です。司令塔エージェントを呼び出します...",
                 );

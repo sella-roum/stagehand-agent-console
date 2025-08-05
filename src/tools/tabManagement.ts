@@ -46,9 +46,9 @@ export const newTabTool = {
       // 新しいタブが開かれたので、AgentStateのページリストを更新する
       await state.updatePages();
       return `新しいタブで ${url} を開きました。`;
-    } catch (error: any) {
-      // new_tab内のgoto失敗をハンドリング
-      if (error.name === "TimeoutError") {
+    } catch (error) {
+      // 型安全なエラーハンドリング
+      if (error instanceof Error && error.name === "TimeoutError") {
         throw new NavigationTimeoutError(
           `新しいタブでのURLへの移動がタイムアウトしました: ${url}。`,
           "new_tab",
@@ -129,10 +129,12 @@ export const switchTabTool = {
       // アクティブなタブが変更されたので、AgentStateの状態を更新する
       await state.updatePages();
       return `タブ ${tabIndex} に切り替えました。`;
-    } catch (error: any) {
-      // 無効なインデックスなどのエラーを捕捉
+    } catch (error) {
+      // 型安全なエラーハンドリング
       throw new InvalidToolArgumentError(
-        `タブの切り替えに失敗しました: ${error.message}`,
+        `タブの切り替えに失敗しました: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
         "switch_tab",
         args,
       );
@@ -204,10 +206,12 @@ export const closeTabTool = {
       // タブが閉じられたので、AgentStateのページリストを更新する
       await state.updatePages();
       return `タブ ${tabIndex} を閉じました。`;
-    } catch (error: any) {
-      // 無効なインデックスなどのエラーを捕捉
+    } catch (error) {
+      // 型安全なエラーハンドリング
       throw new InvalidToolArgumentError(
-        `タブを閉じるのに失敗しました: ${error.message}`,
+        `タブを閉じるのに失敗しました: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
         "close_tab",
         args,
       );

@@ -69,9 +69,12 @@ export const actTool = {
           result,
         )}`;
       }
-    } catch (error: any) {
-      // Playwrightのタイムアウトエラーは、要素が見つからない、表示されない等の問題を示唆
-      if (error.name === "TimeoutError") {
+    } catch (error) {
+      // エラー判定の堅牢性を向上
+      if (
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.message?.includes("timeout"))
+      ) {
         // 構造化されたエラー情報を持つカスタムエラーをスローする
         throw new ElementNotFoundError(
           `要素の操作がタイムアウトしました: ${error.message}`,

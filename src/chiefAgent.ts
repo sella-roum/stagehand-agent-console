@@ -31,27 +31,37 @@ export async function planSubgoals(
   failedSubgoal?: string,
   errorContext?: string,
 ): Promise<string[]> {
+  // 再計画パラメータの整合性チェック
+  const replanParams = [state, failedSubgoal, errorContext];
+  const providedCount = replanParams.filter((p) => p !== undefined).length;
+  if (providedCount > 0 && providedCount < 3) {
+    throw new Error(
+      "再計画モードでは、state、failedSubgoal、errorContextのすべてが必要です",
+    );
+  }
+
   let prompt: string;
   let planFileName = "plan.json";
 
   if (state && failedSubgoal && errorContext) {
     // --- 再計画モード ---
     console.log("👑 司令塔エージェントがタスクを再計画...");
+    const PAGE_SUMMARY_LIMIT = 1000; // 設定可能な定数として定義
     const summary = await state
       .getActivePage()
       .extract()
-      .then((e) => e.page_text?.substring(0, 1000) || "ページ情報なし")
+      .then((e) => e.page_text?.substring(0, PAGE_SUMMARY_LIMIT) || "ページ情報なし")
       .catch(() => "ページ情報なし");
     const context = await formatContext(state, summary);
     const completedSubgoals = state.getCompletedSubgoals();
 
-    prompt = getChiefAgentReplanPrompt(
+    prompt = getChiefAgentReplanPrompt({
       task,
       context,
       completedSubgoals,
       failedSubgoal,
       errorContext,
-    );
+    });
     planFileName = `replan_${Date.now()}.json`;
   } else {
     // --- 初期計画モード ---

@@ -257,9 +257,7 @@ export async function taskAutomationAgent(
         subgoalHistory.map((r) => ({
           toolName: r.toolCall.toolName,
           args: r.toolCall.args,
-          result: r.result
-            ? String(r.result).substring(0, 200)
-            : "N/A",
+          result: r.result ? String(r.result).substring(0, 500) : "N/A",
         })),
       );
 

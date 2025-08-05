@@ -32,6 +32,16 @@ export function getMemoryUpdatePrompt(
   subgoal: string,
   subgoalHistoryJson: string,
 ): string {
+  // JSONの妥当性を念のためチェック
+  try {
+    JSON.parse(subgoalHistoryJson);
+  } catch (e: any) {
+    // ログに出力するが、処理は続行させる
+    console.warn(
+      `Invalid JSON provided for subgoal history: ${e.message}`,
+    );
+  }
+
   return `
 あなたはAIエージェントの行動を分析し、記憶を整理する役割を担っています。
 以下の情報を基に、完了したサブゴールの要約と、長期記憶に追加すべき重要な事実を抽出してください。
@@ -44,7 +54,7 @@ ${subgoal}
 
 # このサブゴールの実行履歴
 \`\`\`json
-${subgoalHistoryJson}
+${subgoalHistoryJson.replace(/`/g, "\\`")}
 \`\`\`
 
 # あなたのタスク

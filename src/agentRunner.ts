@@ -69,7 +69,9 @@ export async function runAgentTask(
   const completedSubgoals: string[] = [];
 
   while (subgoals.length > 0) {
-    const subgoal = subgoals.shift()!;
+    const subgoal = subgoals.shift();
+    if (!subgoal) continue;
+
     console.log(
       `\n▶️ サブゴール ${
         completedSubgoals.length + 1
