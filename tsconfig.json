@@ -17,6 +17,12 @@
       "@/*": ["./*"]
     }
   },
-  "include": ["src/**/*.ts", "llm_clients/**/*.ts", "tests/**/*.ts", "*.ts"],
+  "include": [
+    "scripts/**/*.ts",
+    "src/**/*.ts",
+    "llm_clients/**/*.ts",
+    "tests/**/*.ts",
+    "*.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

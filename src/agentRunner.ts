@@ -15,6 +15,7 @@ import {
   progressEvaluationSchema,
   getProgressEvaluationPrompt,
 } from "@/src/prompts/progressEvaluation";
+import { updateMemoryAfterSubgoal } from "@/utils";
 
 // テスト環境ではユーザーへの問い合わせができないため、`ask_user`ツールを無効化する
 const testSafeTools: CustomTool[] = availableTools.filter(
@@ -55,74 +56,115 @@ export async function runAgentTask(
 
   // 1. 司令塔エージェントによる計画立案
   console.log(`👑 司令塔エージェントがタスク計画を開始: "${task}"`);
-  const subgoals = await planSubgoals(task, llm);
+  let subgoals = await planSubgoals(task, llm);
   if (subgoals.length > maxSubgoals) {
     // 無限ループや意図しない長時間の実行を防ぐためのガードレール
     throw new Error(
       `計画されたサブゴールが多すぎます: ${subgoals.length} > ${maxSubgoals}`,
     );
   }
+  const completedSubgoals: string[] = [];
 
-  // 2. 各サブゴールの逐次実行
-  for (const [index, subgoal] of subgoals.entries()) {
+  while (subgoals.length > 0) {
+    const subgoal = subgoals.shift();
+    if (!subgoal) continue;
+
     console.log(
-      `\n▶️ サブゴール ${index + 1}/${subgoals.length} 実行中: "${subgoal}"`,
+      `\n▶️ サブゴール ${completedSubgoals.length + 1} 実行中: "${subgoal}"`,
     );
+    const historyStartIndex = state.getHistory().length;
 
-    const success = await taskAutomationAgent(subgoal, stagehand, state, task, {
-      isTestEnvironment: true, // 非対話モードであることを実行エージェントに伝える
-      maxLoops: maxLoopsPerSubgoal,
-      tools: testSafeTools, // `ask_user`を除外したツールセットを使用
-      toolRegistry: testSafeToolRegistry,
-    });
-
-    if (!success) {
-      // サブゴールのいずれかが失敗した場合、タスク全体を失敗とみなし、即座にエラーをスローする
-      throw new Error(`サブゴール "${subgoal}" の実行に失敗しました。`);
-    }
-
-    console.log("🕵️‍♂️ タスク全体の進捗を評価中...");
-    const historySummary = JSON.stringify(
-      state
-        .getHistory()
-        .slice(-3)
-        .map((record) => ({
-          toolName: record.toolCall.toolName,
-          args: record.toolCall.args,
-          result:
-            typeof record.result === "string"
-              ? record.result.substring(0, 200)
-              : record.result,
-        })),
-    );
-    const currentUrl = state.getActivePage().url();
-    const evalPrompt = getProgressEvaluationPrompt(
-      task,
-      historySummary,
-      currentUrl,
-    );
-
-    const { object: progress } = await generateObject({
-      model: llm,
-      schema: progressEvaluationSchema,
-      prompt: evalPrompt,
-    });
-
-    if (progress.isTaskCompleted) {
-      console.log(
-        `✅ タスクは既に完了したと判断しました。理由: ${progress.reasoning}`,
+    try {
+      const success = await taskAutomationAgent(
+        subgoal,
+        stagehand,
+        state,
+        task,
+        {
+          isTestEnvironment: true,
+          maxLoops: maxLoopsPerSubgoal,
+          tools: testSafeTools,
+          toolRegistry: testSafeToolRegistry,
+        },
       );
-      // 早期終了した場合も、最終結果として評価を返す
-      return {
-        is_success: true,
-        reasoning: progress.reasoning,
-      };
+
+      if (!success) {
+        throw new Error(`サブゴール "${subgoal}" の実行に失敗しました。`);
+      }
+      completedSubgoals.push(subgoal);
+
+      await updateMemoryAfterSubgoal(
+        state,
+        llm,
+        task,
+        subgoal,
+        historyStartIndex,
+        200,
+      );
+
+      console.log("🕵️‍♂️ タスク全体の進捗を評価中...");
+      const historySummary = JSON.stringify(
+        state
+          .getHistory()
+          .slice(-3)
+          .map((record) => ({
+            toolName: record.toolCall.toolName,
+            args: record.toolCall.args,
+            result:
+              typeof record.result === "string"
+                ? record.result.substring(0, 200)
+                : record.result,
+          })),
+      );
+      const currentUrl = state.getActivePage().url();
+      const evalPrompt = getProgressEvaluationPrompt(
+        task,
+        historySummary,
+        currentUrl,
+      );
+
+      const { object: progress } = await generateObject({
+        model: llm,
+        schema: progressEvaluationSchema,
+        prompt: evalPrompt,
+      });
+
+      if (progress.isTaskCompleted) {
+        console.log(
+          `✅ タスクは既に完了したと判断しました。理由: ${progress.reasoning}`,
+        );
+        return {
+          is_success: true,
+          reasoning: progress.reasoning,
+        };
+      }
+    } catch (error: any) {
+      if (error.name === "ReplanNeededError") {
+        console.warn(
+          "🚨 再計画が必要です (非対話モード)。司令塔エージェントを呼び出します...",
+        );
+        const errorContext = JSON.stringify({
+          name: error.originalError?.name || error.name,
+          message: error.originalError?.message || error.message,
+          failedTool: {
+            name: error.failedToolCall.toolName,
+            args: error.failedToolCall.args,
+          },
+        });
+        subgoals = await planSubgoals(task, llm, state, subgoal, errorContext);
+        completedSubgoals.push(`${subgoal} (失敗)`);
+        if (subgoals.length === 0) {
+          throw new Error(
+            "再計画の結果、実行可能なサブゴールがありません。タスク失敗とします。",
+          );
+        }
+        continue;
+      }
+      throw error;
     }
   }
 
-  // 3. 最終結果の検証と返却
   const finalHistory = state.getHistory();
-  // `finish`ツールが正常に呼び出され、自己評価が完了したかを確認
   const finishRecord = finalHistory.find(
     (h) => h.toolCall.toolName === "finish",
   );
@@ -132,14 +174,12 @@ export async function runAgentTask(
     finishRecord.result.startsWith("SELF_EVALUATION_COMPLETE:")
   ) {
     console.log("✅ 全てのサブゴールの処理が完了しました。");
-    // `SELF_EVALUATION_COMPLETE: { ... }` という文字列からJSON部分を抽出してパースする
     const resultJson = finishRecord.result.replace(
       "SELF_EVALUATION_COMPLETE: ",
       "",
     );
     return JSON.parse(resultJson);
   } else {
-    // `finish`ツールが呼ばれずにループが終了した場合、タスクは未完了とみなす
     throw new Error("エージェントはタスクを完了せずに終了しました。");
   }
 }

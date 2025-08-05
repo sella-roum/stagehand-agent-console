@@ -5,46 +5,90 @@
  */
 
 import { LanguageModel, generateObject } from "ai";
-import { getChiefAgentPrompt, chiefAgentSchema } from "@/src/prompts/chief";
+import {
+  getChiefAgentPrompt,
+  getChiefAgentReplanPrompt,
+  chiefAgentSchema,
+} from "@/src/prompts/chief";
 import { getSafePath } from "@/utils";
 import fs from "fs/promises";
+import { AgentState } from "./agentState";
+import { formatContext } from "./prompts/context";
 
 /**
- * 司令塔エージェントとして、高レベルなタスクをサブゴールのリストに分解します。
- * 生成された計画はコンソールに表示され、`workspace/plan.json`に保存されます。
+ * 司令塔エージェントとして、タスクの計画または再計画を行います。
  * @param task - ユーザーから与えられた高レベルなタスク文字列。
  * @param llm - 計画生成に使用する言語モデルのインスタンス。
+ * @param state - (オプション) 再計画時に現在のエージェントの状態を渡す。
+ * @param failedSubgoal - (オプション) 再計画のトリガーとなった失敗したサブゴール。
+ * @param errorContext - (オプション) 再計画のトリガーとなったエラー情報。
  * @returns サブゴールの文字列を含む配列。
- * @throws {Error} LLMからの応答がスキーマに準拠していない場合にエラーが発生する可能性があります。
  */
 export async function planSubgoals(
   task: string,
   llm: LanguageModel,
+  state?: AgentState,
+  failedSubgoal?: string,
+  errorContext?: string,
 ): Promise<string[]> {
-  console.log("👑 司令塔エージェントがタスク計画を開始...");
-  const prompt = getChiefAgentPrompt(task);
+  // 再計画パラメータの整合性チェック
+  const replanParams = [state, failedSubgoal, errorContext];
+  const providedCount = replanParams.filter((p) => p !== undefined).length;
+  if (providedCount > 0 && providedCount < 3) {
+    throw new Error(
+      "再計画モードでは、state、failedSubgoal、errorContextのすべてが必要です",
+    );
+  }
 
-  // LLMにタスクの計画を依頼し、指定したスキーマで結果を受け取る
+  let prompt: string;
+  let planFileName = "plan.json";
+
+  if (state && failedSubgoal && errorContext) {
+    // --- 再計画モード ---
+    console.log("👑 司令塔エージェントがタスクを再計画...");
+    const PAGE_SUMMARY_LIMIT = 1000; // 設定可能な定数として定義
+    const summary = await state
+      .getActivePage()
+      .extract()
+      .then(
+        (e) =>
+          e.page_text?.substring(0, PAGE_SUMMARY_LIMIT) || "ページ情報なし",
+      )
+      .catch(() => "ページ情報なし");
+    const context = await formatContext(state, summary);
+    const completedSubgoals = state.getCompletedSubgoals();
+
+    prompt = getChiefAgentReplanPrompt({
+      task,
+      context,
+      completedSubgoals,
+      failedSubgoal,
+      errorContext,
+    });
+    planFileName = `replan_${Date.now()}.json`;
+  } else {
+    // --- 初期計画モード ---
+    console.log("👑 司令塔エージェントがタスク計画を開始...");
+    prompt = getChiefAgentPrompt(task);
+  }
+
   const { object: plan } = await generateObject({
     model: llm,
     prompt,
     schema: chiefAgentSchema,
   });
 
-  // 生成された計画をユーザーに提示
   console.log("📝 計画の理由:", plan.reasoning);
   console.log("📋 生成されたサブゴール:");
   plan.subgoals.forEach((goal, index) => {
     console.log(`  ${index + 1}. ${goal}`);
   });
 
-  // 監査とデバッグのため、生成された計画をファイルに保存する
   try {
-    const planPath = getSafePath("plan.json");
-    await fs.writeFile(planPath, JSON.stringify(plan.subgoals, null, 2));
+    const planPath = getSafePath(planFileName);
+    await fs.writeFile(planPath, JSON.stringify(plan, null, 2));
     console.log(`計画を ${planPath} に保存しました。`);
   } catch (e: any) {
-    // ファイル保存は補助的な機能のため、失敗しても処理は続行する
     console.warn(`警告: 計画ファイルの保存に失敗しました。理由: ${e.message}`);
   }
 

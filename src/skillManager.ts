@@ -21,6 +21,7 @@ export interface Skill {
 
 /**
  * 実行履歴を分析し、再利用可能なスキルを生成してファイルに保存します。
+ * 生成されたスキルは 'workspace/skills/candidates' ディレクトリに保存されます。
  * @param history - 分析対象のエージェント実行履歴
  * @param llm - スキル生成に使用する言語モデル
  */
@@ -59,16 +60,21 @@ export async function generateAndSaveSkill(
       result.skill_code &&
       result.skill_description
     ) {
-      console.log(`✨ 新しいスキル '${result.skill_name}' を生成します。`);
+      console.log(`✨ 新しいスキル候補 '${result.skill_name}' を生成します。`);
 
-      const skillDir = path.dirname(getSafePath("skills/placeholder.ts"));
-      await fs.mkdir(skillDir, { recursive: true });
+      // これにより、ディレクトリの存在確認と作成も自動的に行われる
+      const relativePath = path.join(
+        "skills",
+        "candidates",
+        `${result.skill_name}.ts`,
+      );
+      const filePath = getSafePath(relativePath);
 
-      const filePath = getSafePath(`skills/${result.skill_name}.ts`);
       const fileContent = `
 import { AgentState } from "@/src/agentState";
 // @ts-nocheck
 // このファイルはAIによって自動生成されました。
+// 人間によるレビューと承認を経て 'workspace/skills/approved' に移動されるまで、このスキルは有効になりません。
 
 export const description = "${result.skill_description}";
 
@@ -78,7 +84,7 @@ export async function execute(state: AgentState, args: any): Promise<string> {
 `;
       await fs.writeFile(filePath, fileContent);
       console.log(
-        `✅ スキルを ${filePath} に保存しました。次回起動時から利用可能です。`,
+        `✅ スキル候補を ${filePath} に保存しました。レビューと承認後に有効になります。`,
       );
     }
   } catch (e: any) {
@@ -87,12 +93,17 @@ export async function execute(state: AgentState, args: any): Promise<string> {
 }
 
 /**
- * 'workspace/skills' ディレクトリから動的スキルを読み込みます。
+ * 'workspace/skills/approved' ディレクトリから承認済みの動的スキルを読み込みます。
  * @returns スキル名とスキルオブジェクトのMap
  */
 export async function loadSkills(): Promise<Map<string, Skill>> {
   const skills = new Map<string, Skill>();
-  const skillsDir = path.resolve(process.cwd(), "workspace", "skills");
+  const skillsDir = path.resolve(
+    process.cwd(),
+    "workspace",
+    "skills",
+    "approved",
+  );
 
   try {
     await fs.access(skillsDir);
@@ -116,7 +127,7 @@ export async function loadSkills(): Promise<Map<string, Skill>> {
               description: skillModule.description,
               execute: skillModule.execute,
             });
-            console.log(`📚 動的スキル '${skillName}' を読み込みました。`);
+            console.log(`📚 承認済みスキル '${skillName}' を読み込みました。`);
           }
         } catch (e: any) {
           console.error(
@@ -127,7 +138,7 @@ export async function loadSkills(): Promise<Map<string, Skill>> {
       }
     }
   } catch (e) {
-    // skillsディレクトリが存在しない場合は何もしない（初回起動時など）
+    // 'approved' ディレクトリが存在しない場合は何もしない（初回起動時など）
   }
   return skills;
 }

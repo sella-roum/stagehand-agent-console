@@ -8,6 +8,7 @@ import { AgentState } from "@/src/agentState";
 import { confirmAction } from "@/src/debugConsole";
 import { getSafePath } from "@/utils";
 import fs from "fs/promises";
+import { PreconditionResult } from "@/src/types";
 
 // --- writeFile Tool ---
 
@@ -43,7 +44,9 @@ export const writeFileTool = {
   ): Promise<string> => {
     // AgentStateから共有のreadlineインターフェースを取得
     if (!state.rl) {
-      throw new Error("Readline interface is not available for user confirmation.");
+      throw new Error(
+        "Readline interface is not available for user confirmation.",
+      );
     }
     // セキュリティ上のリスクを避けるため、ファイル書き込み前にユーザーの確認を必須とする
     const writeConfirmation = await confirmAction(
@@ -77,6 +80,28 @@ export const readFileTool = {
     "ローカルの'workspace'ディレクトリ内のファイルの内容を読み込みます。",
   schema: readFileSchema,
   /**
+   * read_fileの事前条件チェック
+   * @param state
+   * @param args
+   * @returns 事前条件の結果。成功した場合は { success: true }、失敗した場合は { success: false, message: string }。
+   */
+  precondition: async (
+    state: AgentState,
+    args: z.infer<typeof readFileSchema>,
+  ): Promise<PreconditionResult> => {
+    const { filename } = args;
+    try {
+      const filePath = getSafePath(filename);
+      await fs.access(filePath); // ファイルの存在とアクセス権を確認
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        message: `ファイル '${filename}' が存在しないか、アクセスできません。`,
+      };
+    }
+  },
+  /**
    * `read_file`ツールを実行します。
    * セキュリティのため、ユーザーに読み込みの許可を求めます。
    * @param state - 現在のエージェントの状態。
@@ -91,7 +116,9 @@ export const readFileTool = {
   ): Promise<string> => {
     // AgentStateから共有のreadlineインターフェースを取得
     if (!state.rl) {
-      throw new Error("Readline interface is not available for user confirmation.");
+      throw new Error(
+        "Readline interface is not available for user confirmation.",
+      );
     }
     // セキュリティ上のリスクを避けるため、ファイル読み込み前にユーザーの確認を必須とする
     const readConfirmation = await confirmAction(

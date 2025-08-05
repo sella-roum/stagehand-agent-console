@@ -12,6 +12,7 @@ import {
   generateText,
   generateObject,
   Tool,
+  ToolCall,
 } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";
@@ -25,6 +26,27 @@ import { availableTools, toolRegistry } from "@/src/tools/index";
 import { requestUserApproval } from "@/src/debugConsole";
 import { generateAndSaveSkill } from "@/src/skillManager";
 import { CustomTool } from "@/src/types";
+import { InvalidToolArgumentError } from "@/src/errors";
+import { updateMemoryAfterSubgoal } from "@/utils";
+
+/**
+ * 再計画が必要であることを示すためのカスタムエラー
+ */
+class ReplanNeededError extends Error {
+  public originalError: Error;
+  public failedToolCall: ToolCall<string, any>;
+
+  constructor(
+    message: string,
+    originalError: Error,
+    failedToolCall: ToolCall<string, any>,
+  ) {
+    super(message);
+    this.name = "ReplanNeededError";
+    this.originalError = originalError;
+    this.failedToolCall = failedToolCall;
+  }
+}
 
 /**
  * プロジェクトで定義されたカスタムツール形式を、Vercel AI SDKが要求する形式に変換します。
@@ -190,6 +212,11 @@ export async function taskAutomationAgent(
   } = options;
 
   const llm = getLlmInstance();
+  const historyStartIndex = state.getHistory().length;
+  let reflectionCount = 0;
+  const maxReflections = 2;
+
+  state.clearWorkingMemory();
 
   // Visionモードが有効な場合、ポップアップを自動処理するイベントハンドラを設定
   if (process.env.AGENT_MODE === "vision") {
@@ -227,7 +254,17 @@ export async function taskAutomationAgent(
     // サブゴール完了と判断した場合
     if (finishReason === "stop" && text) {
       console.log(`\n🎉 サブゴール完了！ AIの所感: ${text}`);
-      // テスト環境でなければ、行動履歴から新しいスキルを生成しようと試みる
+      state.addCompletedSubgoal(subgoal);
+
+      await updateMemoryAfterSubgoal(
+        state,
+        llm,
+        originalTask,
+        subgoal,
+        historyStartIndex,
+        500,
+      );
+
       if (!isTestEnvironment) {
         await generateAndSaveSkill(state.getHistory(), llm);
       }
@@ -278,6 +315,19 @@ export async function taskAutomationAgent(
         }
         try {
           const { toolName, args } = toolCall;
+
+          if (tool.precondition) {
+            console.log(`  ...事前条件をチェック中: ${toolName}`);
+            const check = await tool.precondition(state, args);
+            if (!check.success) {
+              throw new InvalidToolArgumentError(
+                `事前条件チェック失敗: ${check.message}`,
+                toolName,
+                args,
+              );
+            }
+          }
+
           console.log(`  ⚡️ 実行中: ${toolName}(${JSON.stringify(args)})`);
 
           const result = await tool.execute(state, args, llm, originalTask);
@@ -295,6 +345,18 @@ export async function taskAutomationAgent(
             result,
           };
         } catch (error: any) {
+          reflectionCount++;
+          if (reflectionCount > maxReflections) {
+            console.warn(
+              `⚠️ 自己修復の試行が${maxReflections}回を超えました。司令塔に再計画を要求します。`,
+            );
+            throw new ReplanNeededError(
+              "自己修復の制限に達しました。",
+              error,
+              toolCall,
+            );
+          }
+
           console.error(`  ❌ エラー (${toolCall.toolName}): ${error.message}`);
           state.addHistory({ toolCall, error: error.message });
           return {
@@ -313,7 +375,7 @@ export async function taskAutomationAgent(
         typeof toolResult.result === "string" &&
         toolResult.result.startsWith("SELF_EVALUATION_COMPLETE")
       ) {
-        return true; // finishが呼ばれたらタスク全体が完了したとみなし、成功を返す
+        return true;
       }
     }
 
@@ -329,7 +391,7 @@ export async function taskAutomationAgent(
     });
 
     await state.updatePages();
-    await new Promise((resolve) => setTimeout(resolve, 1000)); // ページ遷移後の安定化を待つ
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 
   console.warn(

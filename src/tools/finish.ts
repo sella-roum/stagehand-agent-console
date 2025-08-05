@@ -52,24 +52,38 @@ export const finishTool = {
     const historySummary = JSON.stringify(state.getHistory().slice(-5));
     const evalPrompt = getEvaluationPrompt(initialTask, answer, historySummary);
 
-    // LLMに自己評価を依頼
-    const { object: evaluationResult } = await generateObject({
-      model: llm,
-      prompt: evalPrompt,
-      schema: evaluationSchema,
-    });
+    try {
+      // LLMに自己評価を依頼
+      const { object: evaluationResult } = await generateObject({
+        model: llm,
+        prompt: evalPrompt,
+        schema: evaluationSchema,
+      });
 
-    console.log("\n--- 自己評価結果 ---");
-    if (evaluationResult.is_success) {
-      console.log("  ✅ 評価: 成功");
-    } else {
-      console.log("  ❌ 評価: 失敗");
+      console.log("\n--- 自己評価結果 ---");
+      if (evaluationResult.is_success) {
+        console.log("  ✅ 評価: 成功");
+      } else {
+        console.log("  ❌ 評価: 失敗");
+      }
+      console.log(`  理由: ${evaluationResult.reasoning}`);
+      console.log("--------------------");
+
+      // "finish"が呼ばれ、自己評価が完了したことを示す特別な文字列を返す
+      // これにより、呼び出し元のエージェントループが正常に終了する
+      return `SELF_EVALUATION_COMPLETE: ${JSON.stringify(evaluationResult)}`;
+    } catch (error: any) {
+      // スキーマ検証エラーなどのハンドリング
+      if (error.name === "ZodError" || error.message.includes("schema")) {
+        console.error(
+          "❌ 自己評価の出力形式が不正です。スキーマ検証に失敗しました。",
+        );
+        // 失敗を示す特別なメッセージを返す
+        return `SELF_EVALUATION_FAILED: スキーマ検証に失敗しました。最終回答: ${answer}`;
+      }
+      // その他の予期せぬエラー
+      console.error("❌ 自己評価中に予期せぬエラーが発生しました:", error);
+      return `SELF_EVALUATION_ERROR: ${error.message}。最終回答: ${answer}`;
     }
-    console.log(`  理由: ${evaluationResult.reasoning}`);
-    console.log("--------------------");
-
-    // "finish"が呼ばれ、自己評価が完了したことを示す特別な文字列を返す
-    // これにより、呼び出し元のエージェントループが正常に終了する
-    return `SELF_EVALUATION_COMPLETE: ${JSON.stringify(evaluationResult)}`;
   },
 };

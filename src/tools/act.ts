@@ -7,6 +7,7 @@
 import { z } from "zod";
 import { AgentState } from "@/src/agentState";
 import { drawObserveOverlay, clearOverlays } from "@/utils";
+import { ElementNotFoundError } from "@/src/errors";
 
 /**
  * `act`ツールの入力スキーマ。
@@ -39,27 +40,51 @@ export const actTool = {
    */
   execute: async (
     state: AgentState,
-    { instruction }: z.infer<typeof actSchema>,
+    args: z.infer<typeof actSchema>,
   ): Promise<string> => {
+    const { instruction } = args;
     const page = state.getActivePage();
-    // まず`observe`で操作対象の要素を特定する
-    const observedForAct = await page.observe(instruction);
 
-    if (observedForAct.length > 0) {
-      // 要素が見つかった場合、ユーザーに視覚的なフィードバックを提供
-      console.log("  ...操作対象をハイライト表示します。");
-      await drawObserveOverlay(page, observedForAct);
-      await new Promise((resolve) => setTimeout(resolve, 1500)); // ユーザーが確認するための短い待機
+    try {
+      // まず`observe`で操作対象の要素を特定する
+      const observedForAct = await page.observe(instruction);
 
-      // 最も確からしい要素に対して操作を実行
-      const result = await page.act(observedForAct[0]);
-      await clearOverlays(page);
-      return `操作 '${instruction}' を実行しました。結果: ${JSON.stringify(result)}`;
-    } else {
-      // `observe`で要素が見つからなかった場合、`act`に直接指示を渡してフォールバック
-      console.log("  ...observeで見つからなかったため、直接actを試みます。");
-      const result = await page.act(instruction);
-      return `操作 '${instruction}' を直接実行しました。結果: ${JSON.stringify(result)}`;
+      if (observedForAct.length > 0) {
+        // 要素が見つかった場合、ユーザーに視覚的なフィードバックを提供
+        console.log("  ...操作対象をハイライト表示します。");
+        await drawObserveOverlay(page, observedForAct);
+        await new Promise((resolve) => setTimeout(resolve, 1500)); // ユーザーが確認するための短い待機
+
+        // 最も確からしい要素に対して操作を実行
+        const result = await page.act(observedForAct[0]);
+        await clearOverlays(page);
+        return `操作 '${instruction}' を実行しました。結果: ${JSON.stringify(
+          result,
+        )}`;
+      } else {
+        // `observe`で要素が見つからなかった場合、`act`に直接指示を渡してフォールバック
+        console.log("  ...observeで見つからなかったため、直接actを試みます。");
+        const result = await page.act(instruction);
+        return `操作 '${instruction}' を直接実行しました。結果: ${JSON.stringify(
+          result,
+        )}`;
+      }
+    } catch (error) {
+      // エラー判定の堅牢性を向上
+      if (
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.message?.includes("timeout"))
+      ) {
+        // 構造化されたエラー情報を持つカスタムエラーをスローする
+        throw new ElementNotFoundError(
+          `要素の操作がタイムアウトしました: ${error.message}`,
+          "act",
+          args,
+          instruction,
+        );
+      }
+      // その他の予期せぬエラーはそのまま再スロー
+      throw error;
     }
   },
 };

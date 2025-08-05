@@ -243,55 +243,104 @@ export async function interactiveDebugConsole(
           );
 
           const llm = getLlmInstance();
-          const subgoals = await planSubgoals(argument, llm);
+          let subgoals = await planSubgoals(argument, llm);
+          const completedSubgoals: string[] = [];
+          let replanCount = 0;
+          const MAX_REPLAN_ATTEMPTS = 3;
 
-          for (const [index, subgoal] of subgoals.entries()) {
+          while (subgoals.length > 0) {
+            const currentSubgoal = subgoals.shift()!;
             console.log(
-              `\n▶️ サブゴール ${index + 1}/${subgoals.length} 実行中: "${subgoal}"`,
-            );
-            const success = await taskAutomationAgent(
-              subgoal,
-              stagehand,
-              state,
-              argument,
-            );
-            if (!success) {
-              console.error(
-                `サブゴール "${subgoal}" の実行に失敗しました。エージェントの処理を中断します。`,
-              );
-              break;
-            }
-            console.log("🕵️‍♂️ タスク全体の進捗を評価中...");
-            const historySummary = JSON.stringify(state.getHistory().slice(-3));
-            const currentUrl = state.getActivePage().url();
-            const evalPrompt = getProgressEvaluationPrompt(
-              argument,
-              historySummary,
-              currentUrl,
+              `\n▶️ サブゴール ${
+                completedSubgoals.length + 1
+              } 実行中: "${currentSubgoal}"`,
             );
 
-            const { object: progress } = await generateObject({
-              model: llm,
-              schema: progressEvaluationSchema,
-              prompt: evalPrompt,
-            });
-
-            if (progress.isTaskCompleted) {
-              console.log(
-                `✅ タスクは既に完了したと判断しました。理由: ${progress.reasoning}`,
+            try {
+              const success = await taskAutomationAgent(
+                currentSubgoal,
+                stagehand,
+                state,
+                argument,
               );
-              // finishツールを呼び出して正常に終了させる
-              const finishTool = toolRegistry.get("finish");
-              if (finishTool) {
-                await finishTool.execute(
-                  state,
-                  { answer: progress.reasoning },
-                  llm,
-                  argument,
+
+              if (!success) {
+                console.error(
+                  `サブゴール "${currentSubgoal}" の実行に失敗しました。エージェントの処理を中断します。`,
                 );
+                break;
               }
-              // ループを抜ける
-              break;
+
+              completedSubgoals.push(currentSubgoal);
+
+              console.log("🕵️‍♂️ タスク全体の進捗を評価中...");
+              const HISTORY_WINDOW_SIZE = 3;
+              const historySummary = JSON.stringify(
+                state.getHistory().slice(-HISTORY_WINDOW_SIZE),
+              );
+              const currentUrl = state.getActivePage().url();
+              const evalPrompt = getProgressEvaluationPrompt(
+                argument,
+                historySummary,
+                currentUrl,
+              );
+
+              const { object: progress } = await generateObject({
+                model: llm,
+                schema: progressEvaluationSchema,
+                prompt: evalPrompt,
+              });
+
+              if (progress.isTaskCompleted) {
+                console.log(
+                  `✅ タスクは既に完了したと判断しました。理由: ${progress.reasoning}`,
+                );
+                const finishTool = toolRegistry.get("finish");
+                if (finishTool) {
+                  await finishTool.execute(
+                    state,
+                    { answer: progress.reasoning },
+                    llm,
+                    argument,
+                  );
+                }
+                break;
+              }
+            } catch (error: any) {
+              if (error.name === "ReplanNeededError") {
+                if (replanCount >= MAX_REPLAN_ATTEMPTS) {
+                  console.error(
+                    `再計画の試行回数が上限（${MAX_REPLAN_ATTEMPTS}回）に達しました。処理を中断します。`,
+                  );
+                  break;
+                }
+                replanCount++;
+                console.log(
+                  "🚨 再計画が必要です。司令塔エージェントを呼び出します...",
+                );
+                const errorContext = JSON.stringify({
+                  name: error.originalError?.name || error.name,
+                  message: error.originalError?.message || error.message,
+                  failedTool: {
+                    name: error.failedToolCall.toolName,
+                    args: error.failedToolCall.args,
+                  },
+                });
+                subgoals = await planSubgoals(
+                  argument,
+                  llm,
+                  state,
+                  currentSubgoal,
+                  errorContext,
+                );
+                completedSubgoals.push(`${currentSubgoal} (失敗)`);
+                continue;
+              } else {
+                console.error(
+                  `致命的なエラーで処理を中断します: ${error.message}`,
+                );
+                break;
+              }
             }
           }
           console.log("✅ 全てのサブゴールの処理が完了しました。");
@@ -345,8 +394,8 @@ export async function interactiveDebugConsole(
           break;
 
         case "exit":
-          rl.close(); // readlineインターフェースを閉じる
-          return; // ループを抜けて関数を終了
+          rl.close();
+          return;
 
         default:
           console.log(
