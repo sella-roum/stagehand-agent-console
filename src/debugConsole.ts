@@ -319,8 +319,12 @@ export async function interactiveDebugConsole(
                   "🚨 再計画が必要です。司令塔エージェントを呼び出します...",
                 );
                 const errorContext = JSON.stringify({
-                  name: error.originalError.name,
-                  message: error.originalError.message,
+                  name: error.originalError?.name || error.name,
+                  message: error.originalError?.message || error.message,
+                  failedTool: {
+                    name: error.failedToolCall.toolName,
+                    args: error.failedToolCall.args,
+                  },
                 });
                 subgoals = await planSubgoals(
                   argument,

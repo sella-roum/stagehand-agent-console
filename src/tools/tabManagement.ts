@@ -48,7 +48,10 @@ export const newTabTool = {
       return `新しいタブで ${url} を開きました。`;
     } catch (error) {
       // 型安全なエラーハンドリング
-      if (error instanceof Error && error.name === "TimeoutError") {
+      if (
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.message.includes("timeout"))
+      ) {
         throw new NavigationTimeoutError(
           `新しいタブでのURLへの移動がタイムアウトしました: ${url}。`,
           "new_tab",

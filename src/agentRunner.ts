@@ -162,8 +162,12 @@ export async function runAgentTask(
           "🚨 再計画が必要です (非対話モード)。司令塔エージェントを呼び出します...",
         );
         const errorContext = JSON.stringify({
-          name: error.originalError.name,
-          message: error.originalError.message,
+          name: error.originalError?.name || error.name,
+          message: error.originalError?.message || error.message,
+          failedTool: {
+            name: error.failedToolCall.toolName,
+            args: error.failedToolCall.args,
+          },
         });
         subgoals = await planSubgoals(task, llm, state, subgoal, errorContext);
         completedSubgoals.push(`${subgoal} (失敗)`);

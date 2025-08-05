@@ -13,7 +13,7 @@ import { ReflectionResult } from "@/src/types";
 export function getReflectionPrompt(
   task: string,
   error: Error,
-  lastStepArgs: any,
+  lastStepArgs: unknown,
   state: AgentState,
   summary: string,
 ): string {

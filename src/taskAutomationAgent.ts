@@ -12,6 +12,7 @@ import {
   generateText,
   generateObject,
   Tool,
+  ToolCall,
 } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";
@@ -36,10 +37,13 @@ import {
  */
 class ReplanNeededError extends Error {
   public originalError: Error;
-  constructor(message: string, originalError: Error) {
+  public failedToolCall: ToolCall<string, any>;
+
+  constructor(message: string, originalError: Error, failedToolCall: ToolCall<string, any>) {
     super(message);
     this.name = "ReplanNeededError";
     this.originalError = originalError;
+    this.failedToolCall = failedToolCall;
   }
 }
 
@@ -375,6 +379,7 @@ export async function taskAutomationAgent(
             throw new ReplanNeededError(
               "自己修復の制限に達しました。",
               error,
+              toolCall,
             );
           }
 
