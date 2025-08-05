@@ -27,10 +27,7 @@ import { requestUserApproval } from "@/src/debugConsole";
 import { generateAndSaveSkill } from "@/src/skillManager";
 import { CustomTool } from "@/src/types";
 import { InvalidToolArgumentError } from "@/src/errors";
-import {
-  getMemoryUpdatePrompt,
-  memoryUpdateSchema,
-} from "@/src/prompts/memory";
+import { updateMemoryAfterSubgoal } from "@/utils";
 
 /**
  * 再計画が必要であることを示すためのカスタムエラー
@@ -255,41 +252,14 @@ export async function taskAutomationAgent(
       console.log(`\n🎉 サブゴール完了！ AIの所感: ${text}`);
       state.addCompletedSubgoal(subgoal);
 
-      console.log("  ...🧠 経験を記憶に整理中...");
-      const subgoalHistory = state.getHistory().slice(historyStartIndex);
-      const subgoalHistoryJson = JSON.stringify(
-        subgoalHistory.map((r) => ({
-          toolName: r.toolCall.toolName,
-          args: r.toolCall.args,
-          result: r.result ? String(r.result).substring(0, 500) : "N/A",
-        })),
+      await updateMemoryAfterSubgoal(
+        state,
+        llm,
+        originalTask,
+        subgoal,
+        historyStartIndex,
+        500,
       );
-
-      try {
-        const { object: memoryUpdate } = await generateObject({
-          model: llm,
-          prompt: getMemoryUpdatePrompt(
-            originalTask,
-            subgoal,
-            subgoalHistoryJson,
-          ),
-          schema: memoryUpdateSchema,
-        });
-
-        state.addToWorkingMemory(
-          `直前のサブゴール「${subgoal}」の要約: ${memoryUpdate.subgoal_summary}`,
-        );
-
-        if (memoryUpdate.long_term_memory_facts.length > 0) {
-          console.log("  ...📌 長期記憶に新しい事実を追加します。");
-          memoryUpdate.long_term_memory_facts.forEach((fact) => {
-            state.addToLongTermMemory(fact);
-            console.log(`    - ${fact}`);
-          });
-        }
-      } catch (e: any) {
-        console.warn(`⚠️ 記憶の整理中にエラーが発生しました: ${e.message}`);
-      }
 
       if (!isTestEnvironment) {
         await generateAndSaveSkill(state.getHistory(), llm);

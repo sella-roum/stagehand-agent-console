@@ -15,10 +15,7 @@ import {
   progressEvaluationSchema,
   getProgressEvaluationPrompt,
 } from "@/src/prompts/progressEvaluation";
-import {
-  getMemoryUpdatePrompt,
-  memoryUpdateSchema,
-} from "@/src/prompts/memory";
+import { updateMemoryAfterSubgoal } from "@/utils";
 
 // テスト環境ではユーザーへの問い合わせができないため、`ask_user`ツールを無効化する
 const testSafeTools: CustomTool[] = availableTools.filter(
@@ -92,33 +89,14 @@ export async function runAgentTask(
       }
       completedSubgoals.push(subgoal);
 
-      console.log("  ...🧠 経験を記憶に整理中 (非対話モード)...");
-      const subgoalHistory = state.getHistory().slice(historyStartIndex);
-      const subgoalHistoryJson = JSON.stringify(
-        subgoalHistory.map((r) => ({
-          toolName: r.toolCall.toolName,
-          args: r.toolCall.args,
-          result: r.result ? String(r.result).substring(0, 200) : "N/A",
-        })),
+      await updateMemoryAfterSubgoal(
+        state,
+        llm,
+        task,
+        subgoal,
+        historyStartIndex,
+        200,
       );
-
-      try {
-        const { object: memoryUpdate } = await generateObject({
-          model: llm,
-          prompt: getMemoryUpdatePrompt(task, subgoal, subgoalHistoryJson),
-          schema: memoryUpdateSchema,
-        });
-        state.addToWorkingMemory(
-          `直前のサブゴール「${subgoal}」の要約: ${memoryUpdate.subgoal_summary}`,
-        );
-        memoryUpdate.long_term_memory_facts.forEach((fact) =>
-          state.addToLongTermMemory(fact),
-        );
-      } catch (e: any) {
-        console.warn(
-          `⚠️ 記憶の整理中にエラーが発生しました (非対話モード): ${e.message}`,
-        );
-      }
 
       console.log("🕵️‍♂️ タスク全体の進捗を評価中...");
       const historySummary = JSON.stringify(
