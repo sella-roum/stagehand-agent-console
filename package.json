@@ -1,5 +1,5 @@
 {
-  "name": "my-debug-project",
+  "name": "stagehand-agent-console",
   "type": "module",
   "scripts": {
     "build": "tsc",
