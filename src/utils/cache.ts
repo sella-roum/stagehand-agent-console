@@ -3,32 +3,53 @@
  */
 import { ObserveResult, Page } from "@browserbasehq/stagehand";
 import fs from "fs/promises";
+import path from "node:path";
+import { createHash } from "node:crypto";
 import chalk from "chalk";
-import { drawObserveOverlay, clearOverlays } from "./ui";
 import lockfile from "proper-lockfile";
+import { drawObserveOverlay, clearOverlays } from "./ui";
 
-const CACHE_FILE = "cache.json";
+// 専用ディレクトリ内にキャッシュを保存し、パスの安全性を確保
+const CACHE_DIR = path.resolve(process.cwd(), ".stagehand");
+const CACHE_FILE =
+  process.env.STAGEHAND_CACHE_FILE ?? path.join(CACHE_DIR, "cache.json");
+const MAX_CACHE_SIZE = 10 * 1024 * 1024; // 10MB
 
 /**
- * キャッシュキーを生成します。URLと指示を基に一意のキーを作成します。
+ * キャッシュディレクトリが存在することを保証します。
+ */
+async function ensureCacheDir() {
+  await fs.mkdir(CACHE_DIR, { recursive: true });
+}
+
+/**
+ * キャッシュキーを生成します。URLと指示をハッシュ化して、安全性と一意性を高めます。
  * @param url - 現在のページのURL。
  * @param instruction - ユーザーからの指示。
- * @returns 生成されたキャッシュキー文字列。
+ * @returns 生成されたSHA-256ハッシュキー文字列。
  */
 function getCacheKey(url: string, instruction: string): string {
   try {
     const urlObject = new URL(url);
-    const key = `${urlObject.hostname}${urlObject.pathname} | ${instruction}`;
-    return key;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const site = `${urlObject.origin}${urlObject.pathname}`;
+    const payload = JSON.stringify({ site, instruction });
+    return createHash("sha256").update(payload).digest("hex");
   } catch (e) {
-    // about:blankのような無効なURLの場合は、指示のみをキーとする
-    return instruction;
+    // about:blankなどの場合は指示のみのハッシュ
+    return createHash("sha256").update(instruction).digest("hex");
   }
 }
 
 /**
- * `observe`の結果を`cache.json`に保存します。
+ * ファイルロックのための共通オプション。堅牢性を高めます。
+ */
+const lockOptions = {
+  stale: 10_000, // 10秒でロックを古くなったと判断
+  retries: { retries: 5, factor: 1.5, minTimeout: 100, maxTimeout: 1000 },
+};
+
+/**
+ * `observe`の結果を`cache.json`にアトミックに保存します。
  * @param page - 現在のPageオブジェクト。
  * @param instruction - キャッシュキーとして使用する指示。
  * @param actionToCache - キャッシュする`ObserveResult`オブジェクト。
@@ -38,25 +59,36 @@ export async function simpleCache(
   instruction: string,
   actionToCache: ObserveResult,
 ) {
+  await ensureCacheDir();
   const key = getCacheKey(page.url(), instruction);
   let release;
   try {
-    // ファイルをロックして競合状態を防ぐ
-    release = await lockfile.lock(CACHE_FILE, { retries: 5 });
+    release = await lockfile.lock(CACHE_FILE, lockOptions);
     let cache: Record<string, ObserveResult> = {};
     try {
-      const existingCache = await fs.readFile(CACHE_FILE, "utf-8");
-      cache = JSON.parse(existingCache);
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const stats = await fs.stat(CACHE_FILE);
+      if (stats.size > MAX_CACHE_SIZE) {
+        console.warn(
+          chalk.yellow(
+            `キャッシュが上限(${MAX_CACHE_SIZE} bytes)超過のためリセット: ${CACHE_FILE}`,
+          ),
+        );
+      } else {
+        const existingCache = await fs.readFile(CACHE_FILE, "utf-8");
+        cache = JSON.parse(existingCache);
+      }
     } catch (error) {
       // ファイルが存在しない場合は、空のキャッシュから開始
     }
     cache[key] = actionToCache;
-    await fs.writeFile(CACHE_FILE, JSON.stringify(cache, null, 2));
+
+    // アトミックな書き込み（テンポラリファイル -> rename）
+    const tmpFile = `${CACHE_FILE}.tmp`;
+    await fs.writeFile(tmpFile, JSON.stringify(cache, null, 2));
+    await fs.rename(tmpFile, CACHE_FILE);
   } catch (error) {
     console.error(chalk.red("キャッシュへの保存に失敗しました:"), error);
   } finally {
-    // 必ずロックを解放する
     if (release) {
       await release();
     }
@@ -64,7 +96,7 @@ export async function simpleCache(
 }
 
 /**
- * `cache.json`から指示に対応するキャッシュ済みアクションを読み込みます。
+ * `cache.json`から指示に対応するキャッシュ済みアクションを安全に読み込みます。
  * @param page - 現在のPageオブジェクト。
  * @param instruction - 検索する指示。
  * @returns キャッシュされた`ObserveResult`オブジェクト。見つからない場合はnull。
@@ -73,15 +105,14 @@ export async function readCache(
   page: Page,
   instruction: string,
 ): Promise<ObserveResult | null> {
+  await ensureCacheDir();
   const key = getCacheKey(page.url(), instruction);
   let release;
   try {
-    // 読み込み時もロックを取得して、書き込み中の不完全なデータを読まないようにする
-    release = await lockfile.lock(CACHE_FILE, { retries: 5 });
+    release = await lockfile.lock(CACHE_FILE, lockOptions);
     const existingCache = await fs.readFile(CACHE_FILE, "utf-8");
     const cache: Record<string, ObserveResult> = JSON.parse(existingCache);
     return cache[key] || null;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (error) {
     // ファイルが存在しない、または読み込めない場合はキャッシュなしとみなす
     return null;
@@ -94,9 +125,6 @@ export async function readCache(
 
 /**
  * キャッシュを利用して`act`操作を実行します。
- * 1. まずキャッシュからアクションを検索します。
- * 2. キャッシュにあれば、それを使って即座に実行します。
- * 3. なければ、`observe`を実行してアクションを決定し、結果をキャッシュに保存してから実行します。
  * @param page - 操作対象のPageオブジェクト。
  * @param instruction - 実行したい操作の自然言語指示。
  * @param overlayDuration - オーバーレイを表示する時間（ミリ秒）。
@@ -110,12 +138,25 @@ export async function actWithCache(
   const cachedAction = await readCache(page, instruction);
   if (cachedAction) {
     console.log(chalk.blue("キャッシュされたアクションを使用:"), instruction);
-    await page.act(cachedAction);
-    return;
+    try {
+      await page.act(cachedAction);
+      return;
+    } catch (err) {
+      console.warn(
+        chalk.yellow(
+          "キャッシュ済みアクションの実行に失敗。再観察にフォールバックします。",
+        ),
+        err,
+      );
+      // ここでキャッシュを無効化する処理を追加することも可能
+    }
   }
 
   const results = await page.observe(instruction);
-  console.log(chalk.blue("Observe結果:"), results);
+  // デバッグフラグが有効な場合のみ詳細ログを出力
+  if (process.env.DEBUG_CACHE === "1") {
+    console.log(chalk.blue("Observe結果:"), results);
+  }
 
   if (results.length === 0) {
     throw new Error(
@@ -124,7 +165,9 @@ export async function actWithCache(
   }
 
   const actionToCache = results[0];
-  console.log(chalk.blue("アクションをキャッシュします:"), actionToCache);
+  if (process.env.DEBUG_CACHE === "1") {
+    console.log(chalk.blue("アクションをキャッシュします:"), actionToCache);
+  }
   await simpleCache(page, instruction, actionToCache);
 
   // ユーザーにどの要素が対象か視覚的にフィードバック
