@@ -29,11 +29,8 @@ export interface OrchestratorConfig<TArgs = unknown> {
   maxLoopsPerSubgoal?: number;
   maxReplanAttempts?: number;
   isTestEnvironment?: boolean;
-  tools?: CustomTool<z.ZodObject<any, any, any, any, any>, TArgs>[];
-  toolRegistry?: Map<
-    string,
-    CustomTool<z.ZodObject<any, any, any, any, any>, TArgs>
-  >;
+  tools?: CustomTool<z.AnyZodObject, TArgs>[];
+  toolRegistry?: Map<string, CustomTool<z.AnyZodObject, TArgs>>;
   approvalCallback: ApprovalCallback<TArgs>;
 }
 
@@ -94,7 +91,7 @@ export async function orchestrateAgentTask<TArgs = unknown>(
         {
           ...config,
           maxLoops: maxLoopsPerSubgoal,
-          approvalCallback: approvalCallback as ApprovalCallback,
+          approvalCallback,
         },
       );
 
@@ -118,7 +115,12 @@ export async function orchestrateAgentTask<TArgs = unknown>(
       // 2c. 進捗評価
       console.log("🕵️‍♂️ タスク全体の進捗を評価中...");
       const historySummary = JSON.stringify(state.getHistory().slice(-3));
-      const currentUrl = state.getActivePage().url();
+      let currentUrl = "about:blank";
+      try {
+        currentUrl = state.getActivePage().url();
+      } catch {
+        // ページが無い/取得失敗時は既定値
+      }
       const evalPrompt = getProgressEvaluationPrompt(
         task,
         historySummary,

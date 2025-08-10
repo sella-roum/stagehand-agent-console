@@ -16,7 +16,6 @@ import { availableTools, toolRegistry } from "@/src/tools/index";
 import { generateAndSaveSkill } from "@/src/skillManager";
 import { CustomTool, ApprovalCallback } from "@/src/types";
 import { InvalidToolArgumentError } from "@/src/errors";
-import { updateMemoryAfterSubgoal } from "@/src/utils/memory";
 import {
   generateTextWithRetry,
   generateObjectWithRetry,
@@ -27,12 +26,12 @@ import {
  */
 class ReplanNeededError extends Error {
   public originalError: Error;
-  public failedToolCall: ToolCall<string, any>;
+  public failedToolCall: ToolCall<string, unknown>;
 
   constructor(
     message: string,
     originalError: Error,
-    failedToolCall: ToolCall<string, any>,
+    failedToolCall: ToolCall<string, unknown>,
   ) {
     super(message);
     this.name = "ReplanNeededError";
@@ -46,9 +45,9 @@ class ReplanNeededError extends Error {
  * @param tools - プロジェクト独自のカスタムツールの配列。
  * @returns Vercel AI SDKの`generateText`関数に渡すためのツールオブジェクト。
  */
-function mapCustomToolsToAITools<
-  TSchema extends z.ZodObject<any, any, any, any, any>,
->(tools: ReadonlyArray<CustomTool<TSchema, any>>): Record<string, Tool> {
+function mapCustomToolsToAITools<TSchema extends z.AnyZodObject>(
+  tools: ReadonlyArray<CustomTool<TSchema, unknown>>,
+): Record<string, Tool> {
   return tools.reduce(
     (acc, tool) => {
       acc[tool.name] = {
@@ -151,11 +150,8 @@ export async function taskAutomationAgent<TArgs = unknown>(
   options: {
     isTestEnvironment?: boolean;
     maxLoops?: number;
-    tools?: CustomTool<z.ZodObject<any, any, any, any, any>, TArgs>[];
-    toolRegistry?: Map<
-      string,
-      CustomTool<z.ZodObject<any, any, any, any, any>, TArgs>
-    >;
+    tools?: CustomTool<z.AnyZodObject, TArgs>[];
+    toolRegistry?: Map<string, CustomTool<z.AnyZodObject, TArgs>>;
     approvalCallback: ApprovalCallback<TArgs>;
   },
 ): Promise<boolean> {
@@ -167,7 +163,6 @@ export async function taskAutomationAgent<TArgs = unknown>(
     approvalCallback,
   } = options;
 
-  const historyStartIndex = state.getHistory().length;
   let reflectionCount = 0;
   const maxReflections = 2;
 
@@ -211,15 +206,6 @@ export async function taskAutomationAgent<TArgs = unknown>(
       console.log(`\n🎉 サブゴール完了！ AIの所感: ${text}`);
       state.addCompletedSubgoal(subgoal);
 
-      await updateMemoryAfterSubgoal(
-        state,
-        llm,
-        originalTask,
-        subgoal,
-        historyStartIndex,
-        500,
-      );
-
       if (!isTestEnvironment) {
         await generateAndSaveSkill(state.getHistory(), llm);
       }
@@ -234,7 +220,7 @@ export async function taskAutomationAgent<TArgs = unknown>(
     }
 
     // 3. 承認: ユーザーに計画の実行許可を求める（介入モードによる）
-    let approvedPlan;
+    let approvedPlan: ToolCall<string, TArgs>[] | null = null;
     try {
       approvedPlan = await approvalCallback(
         toolCalls as ToolCall<string, TArgs>[],
@@ -250,7 +236,7 @@ export async function taskAutomationAgent<TArgs = unknown>(
       );
       return false;
     }
-    if (!approvedPlan) {
+    if (!approvedPlan || approvedPlan.length === 0) {
       console.log(
         "ユーザーが計画を拒否しました。サブゴールの実行を中断します。",
       );
@@ -268,73 +254,71 @@ export async function taskAutomationAgent<TArgs = unknown>(
       })),
     });
 
-    const toolResults = await Promise.all(
-      approvedPlan.map(async (toolCall) => {
-        const tool = customToolRegistry.get(toolCall.toolName);
-        if (!tool) {
-          const errorMsg = `不明なツールです: ${toolCall.toolName}`;
-          console.error(`  ❌ エラー: ${errorMsg}`);
-          state.addHistory({ toolCall, error: errorMsg });
-          return {
-            toolCallId: toolCall.toolCallId,
-            toolName: toolCall.toolName,
-            result: `エラー: ${errorMsg}`,
-          };
-        }
-        try {
-          const { toolName, args } = toolCall;
-
-          if (tool.precondition) {
-            console.log(`  ...事前条件をチェック中: ${toolName}`);
-            const check = await tool.precondition(state, args);
-            if (!check.success) {
-              throw new InvalidToolArgumentError(
-                `事前条件チェック失敗: ${check.message}`,
-                toolName,
-                args,
-              );
-            }
-          }
-
-          console.log(`  ⚡️ 実行中: ${toolName}(${JSON.stringify(args)})`);
-
-          const result = await tool.execute(state, args, llm, originalTask);
-
-          const resultLog =
-            typeof result === "object"
-              ? JSON.stringify(result, null, 2)
-              : result;
-          console.log(`  ✅ 成功: ${resultLog.substring(0, 200)}...`);
-
-          state.addHistory({ toolCall, result });
-          return {
-            toolCallId: toolCall.toolCallId,
-            toolName: toolCall.toolName,
-            result,
-          };
-        } catch (error: any) {
-          reflectionCount++;
-          if (reflectionCount > maxReflections) {
-            console.warn(
-              `⚠️ 自己修復の試行が${maxReflections}回を超えました。司令塔に再計画を要求します。`,
-            );
-            throw new ReplanNeededError(
-              "自己修復の制限に達しました。",
-              error,
-              toolCall,
+    const toolResults: Array<{
+      toolCallId: string;
+      toolName: string;
+      result: unknown;
+    }> = [];
+    for (const toolCall of approvedPlan) {
+      const tool = customToolRegistry.get(toolCall.toolName);
+      if (!tool) {
+        const errorMsg = `不明なツールです: ${toolCall.toolName}`;
+        console.error(`  ❌ エラー: ${errorMsg}`);
+        state.addHistory({ toolCall, error: errorMsg });
+        toolResults.push({
+          toolCallId: toolCall.toolCallId,
+          toolName: toolCall.toolName,
+          result: `エラー: ${errorMsg}`,
+        });
+        continue;
+      }
+      try {
+        const { toolName, args } = toolCall;
+        // 事前に引数をスキーマで検証して型付け
+        const parsedArgs = tool.schema.parse(args);
+        if (tool.precondition) {
+          console.log(`  ...事前条件をチェック中: ${toolName}`);
+          const check = await tool.precondition(state, parsedArgs);
+          if (!check.success) {
+            throw new InvalidToolArgumentError(
+              `事前条件チェック失敗: ${check.message}`,
+              toolName,
+              parsedArgs,
             );
           }
-
-          console.error(`  ❌ エラー (${toolCall.toolName}): ${error.message}`);
-          state.addHistory({ toolCall, error: error.message });
-          return {
-            toolCallId: toolCall.toolCallId,
-            toolName: toolCall.toolName,
-            result: `エラー: ${error.message}`,
-          };
         }
-      }),
-    );
+        console.log(`  ⚡️ 実行中: ${toolName}(${JSON.stringify(parsedArgs)})`);
+        const result = await tool.execute(state, parsedArgs, llm, originalTask);
+        const resultLog =
+          typeof result === "object" ? JSON.stringify(result, null, 2) : result;
+        console.log(`  ✅ 成功: ${String(resultLog).substring(0, 200)}...`);
+        state.addHistory({ toolCall, result });
+        toolResults.push({
+          toolCallId: toolCall.toolCallId,
+          toolName: toolCall.toolName,
+          result,
+        });
+      } catch (error: any) {
+        reflectionCount++;
+        if (reflectionCount > maxReflections) {
+          console.warn(
+            `⚠️ 自己修復の試行が${maxReflections}回を超えました。司令塔に再計画を要求します。`,
+          );
+          throw new ReplanNeededError(
+            "自己修復の制限に達しました。",
+            error,
+            toolCall,
+          );
+        }
+        console.error(`  ❌ エラー (${toolCall.toolName}): ${error.message}`);
+        state.addHistory({ toolCall, error: error.message });
+        toolResults.push({
+          toolCallId: toolCall.toolCallId,
+          toolName: toolCall.toolName,
+          result: `エラー: ${error.message}`,
+        });
+      }
+    }
 
     // 5. 検証: finishツールが呼ばれたか確認
     for (const toolResult of toolResults) {
