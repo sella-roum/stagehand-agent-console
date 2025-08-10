@@ -4,9 +4,9 @@
 import { ObserveResult, Page } from "@browserbasehq/stagehand";
 import fs from "fs/promises";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import chalk from "chalk";
-import lockfile from "proper-lockfile";
+import lockfile, { LockOptions } from "proper-lockfile";
 import { drawObserveOverlay, clearOverlays } from "./ui";
 
 // 専用ディレクトリ内にキャッシュを保存し、パスの安全性を確保
@@ -19,31 +19,34 @@ const MAX_CACHE_SIZE = 10 * 1024 * 1024; // 10MB
  * キャッシュディレクトリが存在することを保証します。
  */
 async function ensureCacheDir() {
-  await fs.mkdir(CACHE_DIR, { recursive: true });
+  // CACHE_FILE が環境変数で外部パスに変更された場合にも対応
+  await fs.mkdir(path.dirname(CACHE_FILE), { recursive: true });
 }
 
 /**
  * キャッシュキーを生成します。URLと指示をハッシュ化して、安全性と一意性を高めます。
  * @param url - 現在のページのURL。
  * @param instruction - ユーザーからの指示。
- * @returns 生成されたSHA-256ハッシュキー文字列。
+ * @returns 生成されたハッシュキー文字列。
  */
 function getCacheKey(url: string, instruction: string): string {
+  const secret = process.env.STAGEHAND_CACHE_SALT;
+  const hasher = secret ? createHmac("sha256", secret) : createHash("sha256");
   try {
     const urlObject = new URL(url);
     const site = `${urlObject.origin}${urlObject.pathname}`;
     const payload = JSON.stringify({ site, instruction });
-    return createHash("sha256").update(payload).digest("hex");
+    return hasher.update(payload).digest("hex");
   } catch (e) {
     // about:blankなどの場合は指示のみのハッシュ
-    return createHash("sha256").update(instruction).digest("hex");
+    return hasher.update(instruction).digest("hex");
   }
 }
 
 /**
  * ファイルロックのための共通オプション。堅牢性を高めます。
  */
-const lockOptions = {
+const lockOptions: LockOptions = {
   stale: 10_000, // 10秒でロックを古くなったと判断
   retries: { retries: 5, factor: 1.5, minTimeout: 100, maxTimeout: 1000 },
 };
@@ -61,7 +64,7 @@ export async function simpleCache(
 ) {
   await ensureCacheDir();
   const key = getCacheKey(page.url(), instruction);
-  let release;
+  let release: (() => Promise<void>) | undefined;
   try {
     release = await lockfile.lock(CACHE_FILE, lockOptions);
     let cache: Record<string, ObserveResult> = {};
@@ -107,12 +110,25 @@ export async function readCache(
 ): Promise<ObserveResult | null> {
   await ensureCacheDir();
   const key = getCacheKey(page.url(), instruction);
-  let release;
+  let release: (() => Promise<void>) | undefined;
   try {
     release = await lockfile.lock(CACHE_FILE, lockOptions);
+    try {
+      const stats = await fs.stat(CACHE_FILE);
+      if (stats.size > MAX_CACHE_SIZE) {
+        console.warn(
+          chalk.yellow(
+            `キャッシュが上限(${MAX_CACHE_SIZE} bytes)超過のため読み取りをスキップ: ${CACHE_FILE}`,
+          ),
+        );
+        return null;
+      }
+    } catch {
+      // stat 失敗（ファイル無しなど）は既存の例外ハンドリングに委ねる
+    }
     const existingCache = await fs.readFile(CACHE_FILE, "utf-8");
     const cache: Record<string, ObserveResult> = JSON.parse(existingCache);
-    return cache[key] || null;
+    return cache[key] ?? null;
   } catch (error) {
     // ファイルが存在しない、または読み込めない場合はキャッシュなしとみなす
     return null;
@@ -120,6 +136,39 @@ export async function readCache(
     if (release) {
       await release();
     }
+  }
+}
+
+/**
+ * 指定されたキーのキャッシュエントリを削除します。
+ * @param page - 現在のPageオブジェクト。
+ * @param instruction - 削除するキャッシュエントリの指示。
+ */
+export async function deleteCacheKey(
+  page: Page,
+  instruction: string,
+): Promise<void> {
+  await ensureCacheDir();
+  const key = getCacheKey(page.url(), instruction);
+  let release: (() => Promise<void>) | undefined;
+  try {
+    release = await lockfile.lock(CACHE_FILE, lockOptions);
+    let cache: Record<string, ObserveResult> = {};
+    try {
+      const existingCache = await fs.readFile(CACHE_FILE, "utf-8");
+      cache = JSON.parse(existingCache);
+    } catch {
+      // ファイルが存在しない場合は何もせず終了
+      return;
+    }
+    if (key in cache) {
+      delete cache[key];
+      const tmpFile = `${CACHE_FILE}.tmp`;
+      await fs.writeFile(tmpFile, JSON.stringify(cache, null, 2));
+      await fs.rename(tmpFile, CACHE_FILE);
+    }
+  } finally {
+    if (release) await release();
   }
 }
 
@@ -137,7 +186,9 @@ export async function actWithCache(
 ): Promise<void> {
   const cachedAction = await readCache(page, instruction);
   if (cachedAction) {
-    console.log(chalk.blue("キャッシュされたアクションを使用:"), instruction);
+    if (process.env.DEBUG_CACHE === "1") {
+      console.log(chalk.blue("キャッシュされたアクションを使用:"), instruction);
+    }
     try {
       await page.act(cachedAction);
       return;
@@ -148,7 +199,14 @@ export async function actWithCache(
         ),
         err,
       );
-      // ここでキャッシュを無効化する処理を追加することも可能
+      // 失敗したキャッシュを無効化
+      try {
+        await deleteCacheKey(page, instruction);
+      } catch (e) {
+        if (process.env.DEBUG_CACHE === "1") {
+          console.warn(chalk.yellow("キャッシュ無効化に失敗しました"), e);
+        }
+      }
     }
   }
 
@@ -171,9 +229,12 @@ export async function actWithCache(
   await simpleCache(page, instruction, actionToCache);
 
   // ユーザーにどの要素が対象か視覚的にフィードバック
-  await drawObserveOverlay(page, results);
-  await page.waitForTimeout(overlayDuration);
-  await clearOverlays(page);
+  try {
+    await drawObserveOverlay(page, results);
+    await page.waitForTimeout(overlayDuration);
+  } finally {
+    await clearOverlays(page);
+  }
 
   await page.act(actionToCache);
 }
