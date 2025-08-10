@@ -59,12 +59,12 @@ const lockOptions: LockOptions = {
 };
 
 /**
- * キャッシュオブジェクトをファイルにアトミックに書き込みます。
- * @param cache - 書き込むキャッシュオブジェクト。
+ * シリアライズされたキャッシュ文字列をファイルにアトミックに書き込みます。
+ * @param serializedCache - 書き込むシリアライズ済みのキャッシュ文字列。
  */
-async function writeCacheObject(cache: Record<string, ObserveResult>) {
+async function writeCacheObject(serializedCache: string) {
   const tmpFile = `${CACHE_FILE}.tmp`;
-  await fs.writeFile(tmpFile, JSON.stringify(cache, null, 2), {
+  await fs.writeFile(tmpFile, serializedCache, {
     mode: 0o600,
   });
   await fs.rename(tmpFile, CACHE_FILE);
@@ -81,7 +81,16 @@ export async function simpleCache(
   instruction: string,
   actionToCache: ObserveResult,
 ) {
-  await ensureCacheDir();
+  try {
+    await ensureCacheDir();
+  } catch (e) {
+    console.warn(
+      chalk.yellow("キャッシュディレクトリ作成に失敗したため、書き込みをスキップします:"),
+      e,
+    );
+    return;
+  }
+
   const key = getCacheKey(page.url(), instruction);
   let release: (() => Promise<void>) | undefined;
   try {
@@ -103,7 +112,17 @@ export async function simpleCache(
       // ファイルが存在しない場合は、空のキャッシュから開始
     }
     cache[key] = actionToCache;
-    await writeCacheObject(cache);
+
+    const serialized = JSON.stringify(cache);
+    if (Buffer.byteLength(serialized, "utf8") > MAX_CACHE_SIZE) {
+      console.warn(
+        chalk.yellow(
+          `キャッシュサイズが上限(${MAX_CACHE_SIZE} bytes)を超えるため書き込みをスキップ: ${CACHE_FILE}`,
+        ),
+      );
+      return;
+    }
+    await writeCacheObject(serialized);
   } catch (error) {
     console.error(chalk.red("キャッシュへの保存に失敗しました:"), error);
   } finally {
@@ -123,7 +142,18 @@ export async function readCache(
   page: Page,
   instruction: string,
 ): Promise<ObserveResult | null> {
-  await ensureCacheDir();
+  try {
+    await ensureCacheDir();
+  } catch (e) {
+    if (process.env.DEBUG_CACHE === "1") {
+      console.warn(
+        chalk.yellow("キャッシュディレクトリ作成に失敗したため、読み取りをスキップします:"),
+        e,
+      );
+    }
+    return null;
+  }
+
   const key = getCacheKey(page.url(), instruction);
   let release: (() => Promise<void>) | undefined;
   try {
@@ -142,8 +172,18 @@ export async function readCache(
       // stat 失敗（ファイル無しなど）は既存の例外ハンドリングに委ねる
     }
     const existingCache = await fs.readFile(CACHE_FILE, "utf-8");
-    const cache: Record<string, ObserveResult> = JSON.parse(existingCache);
-    return cache[key] ?? null;
+    try {
+      const cache: Record<string, ObserveResult> = JSON.parse(existingCache);
+      return cache[key] ?? null;
+    } catch (e) {
+      if (process.env.DEBUG_CACHE === "1") {
+        console.warn(
+          chalk.yellow("キャッシュファイルの JSON 解析に失敗しました。読み取りをスキップします:"),
+          e,
+        );
+      }
+      return null;
+    }
   } catch (error) {
     // ファイルが存在しない、または読み込めない場合はキャッシュなしとみなす
     return null;
@@ -163,7 +203,16 @@ export async function deleteCacheKey(
   page: Page,
   instruction: string,
 ): Promise<void> {
-  await ensureCacheDir();
+  try {
+    await ensureCacheDir();
+  } catch (e) {
+    console.warn(
+      chalk.yellow("キャッシュディレクトリ作成に失敗したため、削除をスキップします:"),
+      e,
+    );
+    return;
+  }
+
   const key = getCacheKey(page.url(), instruction);
   let release: (() => Promise<void>) | undefined;
   try {
@@ -178,7 +227,7 @@ export async function deleteCacheKey(
     }
     if (key in cache) {
       delete cache[key];
-      await writeCacheObject(cache);
+      await writeCacheObject(JSON.stringify(cache));
     }
   } finally {
     if (release) await release();
