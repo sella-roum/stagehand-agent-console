@@ -8,15 +8,13 @@ import { Stagehand } from "@browserbasehq/stagehand";
 import { AgentState } from "@/src/agentState";
 import { getLlmInstance } from "@/src/utils/llm";
 import { availableTools } from "@/src/tools";
-import { AgentExecutionResult, CustomTool } from "@/src/types";
+import { AgentExecutionResult } from "@/src/types";
 import { orchestrateAgentTask } from "./agentOrchestrator";
 
 // テスト環境ではユーザーへの問い合わせができないため、`ask_user`ツールを無効化する
-const testSafeTools: CustomTool<any>[] = availableTools.filter(
-  (t) => t.name !== "ask_user",
-);
-const testSafeToolRegistry = new Map<string, CustomTool<any>>(
-  testSafeTools.map((t) => [t.name, t]),
+const testSafeTools = availableTools.filter((t) => t.name !== "ask_user");
+const testSafeToolRegistry = new Map(
+  testSafeTools.map((t) => [t.name, t] as const),
 );
 
 /**

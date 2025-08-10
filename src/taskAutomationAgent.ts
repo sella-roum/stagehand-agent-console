@@ -6,14 +6,7 @@
  */
 
 import { Stagehand } from "@browserbasehq/stagehand";
-import {
-  CoreMessage,
-  LanguageModel,
-  generateText,
-  generateObject,
-  Tool,
-  ToolCall,
-} from "ai";
+import { CoreMessage, LanguageModel, Tool, ToolCall } from "ai";
 import { z } from "zod";
 
 import { AgentState } from "@/src/agentState";
@@ -21,10 +14,13 @@ import { getBasePrompt } from "@/src/prompts/base";
 import { formatContext } from "@/src/prompts/context";
 import { availableTools, toolRegistry } from "@/src/tools/index";
 import { generateAndSaveSkill } from "@/src/skillManager";
-import { CustomTool } from "@/src/types";
+import { CustomTool, ApprovalCallback } from "@/src/types";
 import { InvalidToolArgumentError } from "@/src/errors";
 import { updateMemoryAfterSubgoal } from "@/src/utils/memory";
-import { ApprovalCallback } from "./agentOrchestrator";
+import {
+  generateTextWithRetry,
+  generateObjectWithRetry,
+} from "@/src/utils/llm";
 
 /**
  * 再計画が必要であることを示すためのカスタムエラー
@@ -50,9 +46,9 @@ class ReplanNeededError extends Error {
  * @param tools - プロジェクト独自のカスタムツールの配列。
  * @returns Vercel AI SDKの`generateText`関数に渡すためのツールオブジェクト。
  */
-function mapCustomToolsToAITools(
-  tools: CustomTool<z.ZodObject<any, any, any, any, any>, any>[],
-): Record<string, Tool> {
+function mapCustomToolsToAITools<
+  TSchema extends z.ZodObject<any, any, any, any, any>,
+>(tools: ReadonlyArray<CustomTool<TSchema, any>>): Record<string, Tool> {
   return tools.reduce(
     (acc, tool) => {
       acc[tool.name] = {
@@ -98,7 +94,7 @@ async function setupGlobalEventHandlers(
       });
 
       // Visionモデルにスクリーンショットを渡し、ポップアップが不要かどうかを判断させる
-      const { object: analysis } = await generateObject({
+      const { object: analysis } = await generateObjectWithRetry({
         model: llm,
         schema: popupAnalysisSchema,
         messages: [
@@ -204,7 +200,7 @@ export async function taskAutomationAgent<TArgs = unknown>(
     const contextPrompt = await formatContext(state, summary);
 
     // 2. 思考: LLMに次の行動（ツール呼び出し）を決定させる
-    const { toolCalls, text, finishReason } = await generateText({
+    const { toolCalls, text, finishReason } = await generateTextWithRetry({
       model: llm,
       messages: [...messages, { role: "user", content: contextPrompt }],
       tools: mapCustomToolsToAITools(tools),
@@ -244,7 +240,14 @@ export async function taskAutomationAgent<TArgs = unknown>(
         toolCalls as ToolCall<string, TArgs>[],
       );
     } catch (error: any) {
-      console.error(`承認プロセス中にエラーが発生しました: ${error.message}`);
+      const planSummary =
+        toolCalls
+          ?.map((tc) => tc.toolName)
+          .slice(0, 3)
+          .join(", ") || "N/A";
+      console.error(
+        `承認プロセス中にエラーが発生しました: ${error.message}\n失敗した計画の概要 (先頭3件): ${planSummary}`,
+      );
       return false;
     }
     if (!approvedPlan) {

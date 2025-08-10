@@ -7,8 +7,12 @@ import { Stagehand } from "@browserbasehq/stagehand";
 import { AgentState } from "@/src/agentState";
 import { planSubgoals } from "@/src/chiefAgent";
 import { taskAutomationAgent } from "@/src/taskAutomationAgent";
-import { AgentExecutionResult, CustomTool } from "@/src/types";
-import { LanguageModel, ToolCall } from "ai";
+import {
+  AgentExecutionResult,
+  CustomTool,
+  ApprovalCallback,
+} from "@/src/types";
+import { LanguageModel } from "ai";
 import { generateObjectWithRetry } from "@/src/utils/llm";
 import {
   progressEvaluationSchema,
@@ -16,15 +20,6 @@ import {
 } from "@/src/prompts/progressEvaluation";
 import { updateMemoryAfterSubgoal } from "@/src/utils/memory";
 import { z } from "zod";
-
-/**
- * ユーザー承認コールバックの型定義。
- * @param plan - AIが生成した実行計画
- * @returns 承認された場合は計画を、拒否された場合はnullを返すPromise
- */
-export type ApprovalCallback<TArgs = unknown> = (
-  plan: ToolCall<string, TArgs>[],
-) => Promise<ToolCall<string, TArgs>[] | null>;
 
 /**
  * エージェントの実行設定
