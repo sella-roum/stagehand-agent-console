@@ -1,7 +1,7 @@
 /**
  * @file ファイルシステム関連のユーティリティ関数を提供します。
  */
-import fs from "fs/promises";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -16,7 +16,8 @@ export function getSafePath(filename: string): string {
   const intendedPath = path.resolve(workspaceDir, filename);
 
   // パスがworkspaceディレクトリ内に収まっているか検証
-  if (!intendedPath.startsWith(workspaceDir)) {
+  const relative = path.relative(workspaceDir, intendedPath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error(
       `セキュリティエラー: ディレクトリトラバーサルが検出されました。ファイル操作は 'workspace' ディレクトリ内に限定されています。`,
     );
@@ -24,7 +25,7 @@ export function getSafePath(filename: string): string {
 
   // ファイルが配置されるディレクトリが存在しない場合は再帰的に作成
   const dir = path.dirname(intendedPath);
-  fs.mkdir(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true });
 
   return intendedPath;
 }

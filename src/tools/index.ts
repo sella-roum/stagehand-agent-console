@@ -27,7 +27,7 @@ import { CustomTool } from "@/src/types";
  * @description 静的に定義された、エージェントの基本的なツールセット。
  * アプリケーション起動時に動的スキルが追加される前の初期状態です。
  */
-export const availableTools: CustomTool<any>[] = [
+export const availableTools: CustomTool<any, any>[] = [
   gotoTool,
   actTool,
   cachedActTool,
@@ -49,7 +49,7 @@ export const availableTools: CustomTool<any>[] = [
  * @description ツール名で高速に検索するためのMap。
  * `availableTools`配列から生成されます。
  */
-export let toolRegistry = new Map<string, CustomTool<any>>(
+export let toolRegistry = new Map<string, CustomTool<any, any>>(
   availableTools.map((tool) => [tool.name, tool]),
 );
 
@@ -62,7 +62,7 @@ export async function initializeTools() {
   const dynamicSkills = await loadSkills();
 
   dynamicSkills.forEach((skill, name) => {
-    const skillTool: CustomTool<any> = {
+    const skillTool: CustomTool<z.ZodObject<{ args: z.ZodAny }>> = {
       name: name,
       description: skill.description,
       // スキルに渡す引数を汎用的に受け入れるためのスキーマ
@@ -70,14 +70,20 @@ export async function initializeTools() {
         args: z.any().describe("スキルに渡す引数（JSONオブジェクト形式）"),
       }),
       // スキルモジュールのexecute関数を呼び出すラッパー関数
-      execute: (state, { args }, llm, initialTask) =>
-        skill.execute(state, args, llm, initialTask),
+      execute: async (state, { args }, llm, initialTask) => {
+        try {
+          return await skill.execute(state, args, llm, initialTask);
+        } catch (error) {
+          console.error(`スキル実行エラー [${name}]:`, error);
+          throw error;
+        }
+      },
     };
     availableTools.push(skillTool);
   });
 
   // 新しいツールセットでtoolRegistryを再構築
-  toolRegistry = new Map<string, CustomTool<any>>(
+  toolRegistry = new Map<string, CustomTool<any, any>>(
     availableTools.map((tool) => [tool.name, tool]),
   );
 }

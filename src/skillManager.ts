@@ -1,4 +1,4 @@
-import { LanguageModel, generateObject } from "ai";
+import { LanguageModel } from "ai";
 import { ExecutionRecord } from "@/src/types";
 import {
   getSkillGenerationPrompt,
@@ -9,6 +9,7 @@ import fs from "fs/promises";
 import path from "path";
 import { AgentState } from "@/src/agentState";
 import { availableTools } from "@/src/tools";
+import { generateObjectWithRetry } from "@/src/utils/llm";
 
 /**
  * 動的に生成・ロードされるスキルのインターフェース
@@ -52,7 +53,7 @@ export async function generateAndSaveSkill(
   const prompt = getSkillGenerationPrompt(historyJson, existingSkills);
 
   try {
-    const { object: result } = await generateObject({
+    const { object: result } = await generateObjectWithRetry({
       model: llm,
       prompt,
       schema: skillGenerationSchema,
@@ -68,11 +69,8 @@ export async function generateAndSaveSkill(
       console.log(`✨ 新しいスキル候補 '${result.skill_name}' を生成します。`);
 
       // これにより、ディレクトリの存在確認と作成も自動的に行われる
-      const relativePath = path.join(
-        "skills",
-        "candidates",
-        `${result.skill_name}.ts`,
-      );
+      const safeName = result.skill_name.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const relativePath = path.join("skills", "candidates", `${safeName}.ts`);
       const filePath = getSafePath(relativePath);
 
       const fileContent = `
@@ -88,6 +86,7 @@ export async function execute(state: AgentState, args: any, llm: LanguageModel, 
   ${result.skill_code}
 }
 `;
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, fileContent);
       console.log(
         `✅ スキル候補を ${filePath} に保存しました。レビューと承認後に有効になります。`,

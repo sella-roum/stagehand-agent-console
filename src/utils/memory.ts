@@ -2,11 +2,12 @@
  * @file エージェントの記憶管理に関するユーティリティ関数を提供します。
  */
 import { AgentState } from "@/src/agentState";
-import { LanguageModel, generateObject } from "ai";
+import { LanguageModel } from "ai";
 import {
   getMemoryUpdatePrompt,
   memoryUpdateSchema,
 } from "@/src/prompts/memory";
+import { generateObjectWithRetry } from "./llm";
 
 /**
  * サブゴール完了後にエージェントの記憶を更新するための共通関数。
@@ -24,19 +25,31 @@ export async function updateMemoryAfterSubgoal(
   subgoal: string,
   historyStartIndex: number,
   resultCharLimit: number = 200,
-) {
+): Promise<void> {
   console.log("  ...🧠 経験を記憶に整理中...");
   const subgoalHistory = state.getHistory().slice(historyStartIndex);
   const subgoalHistoryJson = JSON.stringify(
     subgoalHistory.map((r) => ({
       toolName: r.toolCall.toolName,
-      args: r.toolCall.args,
+      args:
+        r.toolCall?.args != null
+          ? (() => {
+              try {
+                return JSON.stringify(r.toolCall.args).substring(
+                  0,
+                  resultCharLimit,
+                );
+              } catch {
+                return "[Unserializable args]";
+              }
+            })()
+          : "N/A",
       result: r.result ? String(r.result).substring(0, resultCharLimit) : "N/A",
     })),
   );
 
   try {
-    const { object: memoryUpdate } = await generateObject({
+    const { object: memoryUpdate } = await generateObjectWithRetry({
       model: llm,
       prompt: getMemoryUpdatePrompt(originalTask, subgoal, subgoalHistoryJson),
       schema: memoryUpdateSchema,
@@ -48,7 +61,7 @@ export async function updateMemoryAfterSubgoal(
 
     if (memoryUpdate.long_term_memory_facts.length > 0) {
       console.log("  ...📌 長期記憶に新しい事実を追加します。");
-      memoryUpdate.long_term_memory_facts.forEach((fact) => {
+      memoryUpdate.long_term_memory_facts.forEach((fact: string) => {
         state.addToLongTermMemory(fact);
         console.log(`    - ${fact}`);
       });

@@ -25,7 +25,7 @@ export const writeFileSchema = z.object({
 /**
  * `write_file`ツールの定義オブジェクト。
  */
-export const writeFileTool: CustomTool<typeof writeFileSchema> = {
+export const writeFileTool: CustomTool<typeof writeFileSchema, string> = {
   name: "write_file",
   description:
     "テキストコンテンツをローカルの'workspace'ディレクトリ内のファイルに書き出します。",
@@ -86,7 +86,7 @@ export const readFileSchema = z.object({
 /**
  * `read_file`ツールの定義オブジェクト。
  */
-export const readFileTool: CustomTool<typeof readFileSchema> = {
+export const readFileTool: CustomTool<typeof readFileSchema, string> = {
   name: "read_file",
   description:
     "ローカルの'workspace'ディレクトリ内のファイルの内容を読み込みます。",
@@ -142,6 +142,15 @@ export const readFileTool: CustomTool<typeof readFileSchema> = {
       throw new Error("ユーザーがファイル読み込みを拒否しました。");
 
     const readPath = getSafePath(filename);
+    const stat = await fs.stat(readPath);
+    const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+    if (stat.size > MAX_FILE_SIZE_BYTES) {
+      throw new InvalidToolArgumentError(
+        `読み込み対象ファイルがサイズ上限(${MAX_FILE_SIZE_BYTES}バイト)を超えています。`,
+        "read_file",
+        { filename, size: stat.size },
+      );
+    }
     return await fs.readFile(readPath, "utf-8");
   },
 };

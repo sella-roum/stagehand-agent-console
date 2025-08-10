@@ -6,7 +6,7 @@
 
 import { Stagehand } from "@browserbasehq/stagehand";
 import { AgentState } from "@/src/agentState";
-import { getLlmInstance } from "@/src/taskAutomationAgent";
+import { getLlmInstance } from "@/src/utils/llm";
 import { availableTools } from "@/src/tools";
 import { AgentExecutionResult, CustomTool } from "@/src/types";
 import { orchestrateAgentTask } from "./agentOrchestrator";

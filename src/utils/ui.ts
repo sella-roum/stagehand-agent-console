@@ -26,41 +26,49 @@ export function announce(message: string, title?: string) {
  * @param results - `observe`コマンドから返された結果の配列。
  */
 export async function drawObserveOverlay(page: Page, results: ObserveResult[]) {
-  const xpathList = results.map((result) => result.selector);
-  const validXpaths = xpathList.filter((xpath) => xpath !== "xpath=");
+  // 既存オーバーレイをクリア
+  await clearOverlays(page);
+
+  const selectors = results
+    .map((r) => r.selector)
+    .filter((s): s is string => !!s && s.trim() !== "" && s !== "xpath=");
 
   await page.evaluate((selectors) => {
     selectors.forEach((selector) => {
-      let element;
-      if (selector.startsWith("xpath=")) {
-        const xpath = selector.substring(6);
-        element = document.evaluate(
-          xpath,
-          document,
-          null,
-          XPathResult.FIRST_ORDERED_NODE_TYPE,
-          null,
-        ).singleNodeValue;
-      } else {
-        element = document.querySelector(selector);
-      }
+      try {
+        let element: Element | null = null;
+        if (selector.startsWith("xpath=")) {
+          const xpath = selector.substring(6);
+          element = document.evaluate(
+            xpath,
+            document,
+            null,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,
+            null,
+          ).singleNodeValue as Element | null;
+        } else {
+          element = document.querySelector(selector);
+        }
 
-      if (element instanceof HTMLElement) {
-        const overlay = document.createElement("div");
-        overlay.setAttribute("stagehandObserve", "true");
-        const rect = element.getBoundingClientRect();
-        overlay.style.position = "absolute";
-        overlay.style.left = rect.left + "px";
-        overlay.style.top = rect.top + "px";
-        overlay.style.width = rect.width + "px";
-        overlay.style.height = rect.height + "px";
-        overlay.style.backgroundColor = "rgba(255, 255, 0, 0.3)";
-        overlay.style.pointerEvents = "none";
-        overlay.style.zIndex = "10000";
-        document.body.appendChild(overlay);
+        if (element instanceof HTMLElement) {
+          const overlay = document.createElement("div");
+          overlay.setAttribute("stagehandObserve", "true");
+          const rect = element.getBoundingClientRect();
+          overlay.style.position = "absolute";
+          overlay.style.left = rect.left + "px";
+          overlay.style.top = rect.top + "px";
+          overlay.style.width = rect.width + "px";
+          overlay.style.height = rect.height + "px";
+          overlay.style.backgroundColor = "rgba(255, 255, 0, 0.3)";
+          overlay.style.pointerEvents = "none";
+          overlay.style.zIndex = "10000";
+          document.body.appendChild(overlay);
+        }
+      } catch {
+        // 無効セレクタ等はスキップ
       }
     });
-  }, validXpaths);
+  }, selectors);
 }
 
 /**

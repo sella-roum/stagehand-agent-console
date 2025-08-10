@@ -4,7 +4,7 @@
  * 実行可能なサブゴールのリストに分解（計画）する役割を担います。
  */
 
-import { LanguageModel, generateObject } from "ai";
+import { LanguageModel } from "ai";
 import {
   getChiefAgentPrompt,
   getChiefAgentReplanPrompt,
@@ -14,6 +14,7 @@ import { getSafePath } from "@/src/utils/file";
 import fs from "fs/promises";
 import { AgentState } from "./agentState";
 import { formatContext } from "./prompts/context";
+import { generateObjectWithRetry } from "@/src/utils/llm";
 
 /**
  * 司令塔エージェントとして、タスクの計画または再計画を行います。
@@ -72,7 +73,7 @@ export async function planSubgoals(
     prompt = getChiefAgentPrompt(task);
   }
 
-  const { object: plan } = await generateObject({
+  const { object: plan } = await generateObjectWithRetry({
     model: llm,
     prompt,
     schema: chiefAgentSchema,
@@ -80,7 +81,7 @@ export async function planSubgoals(
 
   console.log("📝 計画の理由:", plan.reasoning);
   console.log("📋 生成されたサブゴール:");
-  plan.subgoals.forEach((goal, index) => {
+  plan.subgoals.forEach((goal: string, index: number) => {
     console.log(`  ${index + 1}. ${goal}`);
   });
 

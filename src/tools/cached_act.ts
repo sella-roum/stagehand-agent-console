@@ -14,13 +14,15 @@ import { CustomTool } from "@/src/types";
 export const cachedActSchema = z.object({
   instruction: z
     .string()
+    .trim()
+    .min(1, "instruction は1文字以上で指定してください。")
     .describe("キャッシュを利用して実行する操作の自然言語指示。"),
 });
 
 /**
  * `cached_act`ツールの定義オブジェクト。
  */
-export const cachedActTool: CustomTool<typeof cachedActSchema> = {
+export const cachedActTool: CustomTool<typeof cachedActSchema, string> = {
   name: "cached_act",
   description:
     "指示に対応する操作をキャッシュを利用して実行します。初めての操作は要素を探し、2回目以降は高速に実行します。",

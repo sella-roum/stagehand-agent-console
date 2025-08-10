@@ -17,6 +17,8 @@ import { CustomTool } from "@/src/types";
 export const actSchema = z.object({
   instruction: z
     .string()
+    .trim()
+    .min(1, "instructionは1文字以上で指定してください。")
     .describe(
       "実行する操作の自然言語による指示。例: '「ログイン」ボタンをクリック'",
     ),
@@ -25,7 +27,7 @@ export const actSchema = z.object({
 /**
  * `act`ツールの定義オブジェクト。
  */
-export const actTool: CustomTool<typeof actSchema> = {
+export const actTool: CustomTool<typeof actSchema, any> = {
   name: "act",
   description:
     "ページ上で特定の操作（クリック、入力、スクロールなど）を行います。",
@@ -50,17 +52,20 @@ export const actTool: CustomTool<typeof actSchema> = {
       const observedForAct = await page.observe(instruction);
 
       if (observedForAct.length > 0) {
-        // 要素が見つかった場合、ユーザーに視覚的なフィードバックを提供
-        console.log("  ...操作対象をハイライト表示します。");
-        await drawObserveOverlay(page, observedForAct);
-        await new Promise((resolve) => setTimeout(resolve, 1500)); // ユーザーが確認するための短い待機
+        try {
+          // 要素が見つかった場合、ユーザーに視覚的なフィードバックを提供
+          console.log("  ...操作対象をハイライト表示します。");
+          await drawObserveOverlay(page, observedForAct);
+          await new Promise((resolve) => setTimeout(resolve, 1500)); // ユーザーが確認するための短い待機
 
-        // 最も確からしい要素に対して操作を実行
-        const result = await page.act(observedForAct[0]);
-        await clearOverlays(page);
-        return `操作 '${instruction}' を実行しました。結果: ${JSON.stringify(
-          result,
-        )}`;
+          // 最も確からしい要素に対して操作を実行
+          const result = await page.act(observedForAct[0]);
+          return `操作 '${instruction}' を実行しました。結果: ${JSON.stringify(
+            result,
+          )}`;
+        } finally {
+          await clearOverlays(page);
+        }
       } else {
         // `observe`で要素が見つからなかった場合、`act`に直接指示を渡してフォールバック
         console.log("  ...observeで見つからなかったため、直接actを試みます。");

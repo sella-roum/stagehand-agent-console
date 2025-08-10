@@ -22,7 +22,7 @@ export const askUserSchema = z.object({
 /**
  * `ask_user`ツールの定義オブジェクト。
  */
-export const askUserTool: CustomTool<typeof askUserSchema> = {
+export const askUserTool: CustomTool<typeof askUserSchema, string> = {
   name: "ask_user",
   description:
     "自分だけでは解決できない問題に直面した際に、ユーザーに助けを求めるために使用します。曖昧な指示の明確化、ログイン情報やCAPTCHAの解決、または完全に行き詰まった場合などに使用してください。",

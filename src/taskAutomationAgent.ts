@@ -14,9 +14,6 @@ import {
   Tool,
   ToolCall,
 } from "ai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createGroq } from "@ai-sdk/groq";
-import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 
 import { AgentState } from "@/src/agentState";
@@ -54,7 +51,7 @@ class ReplanNeededError extends Error {
  * @returns Vercel AI SDKの`generateText`関数に渡すためのツールオブジェクト。
  */
 function mapCustomToolsToAITools(
-  tools: CustomTool<any>[],
+  tools: CustomTool<z.ZodObject<any, any, any, any, any>, any>[],
 ): Record<string, Tool> {
   return tools.reduce(
     (acc, tool) => {
@@ -66,53 +63,6 @@ function mapCustomToolsToAITools(
     },
     {} as Record<string, Tool>,
   );
-}
-
-/**
- * 環境変数に基づいて、適切なLLMクライアントのインスタンスを生成して返します。
- * @returns Vercel AI SDKの`LanguageModel`インスタンス。
- * @throws {Error} 必要なAPIキーが.envファイルに設定されていない場合にエラーをスローします。
- */
-export function getLlmInstance(): LanguageModel {
-  const agentMode = process.env.AGENT_MODE || "text";
-  const LLM_PROVIDER = process.env.LLM_PROVIDER || "google";
-
-  if (LLM_PROVIDER === "groq") {
-    const groqApiKey = process.env.GROQ_API_KEY;
-    if (!groqApiKey)
-      throw new Error("GROQ_API_KEYが.envファイルに設定されていません。");
-    const groq = createGroq({ apiKey: groqApiKey });
-    // Groqは現在Vision非対応のため、モードに関わらずテキストモデルを使用
-    return groq(process.env.GROQ_MODEL || "");
-  } else if (LLM_PROVIDER === "openrouter") {
-    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
-    if (!openRouterApiKey)
-      throw new Error("OPENROUTER_API_KEYが.envファイルに設定されていません。");
-    const openrouter = createOpenAI({
-      apiKey: openRouterApiKey,
-      baseURL: "https://openrouter.ai/api/v1",
-      headers: {
-        "HTTP-Referer": "http://localhost:3000",
-        "X-Title": "Stagehand Agent Console",
-      },
-    });
-    const modelName =
-      agentMode === "vision"
-        ? "" // Visionモードの場合、モデル名をOpenAIクライアントに任せる
-        : process.env.OPENROUTER_MODEL || "";
-    return openrouter(modelName);
-  } else {
-    // google
-    const googleApiKey = process.env.GOOGLE_API_KEY;
-    if (!googleApiKey)
-      throw new Error("GOOGLE_API_KEYが.envファイルに設定されていません。");
-    const google = createGoogleGenerativeAI({ apiKey: googleApiKey });
-    const modelName =
-      agentMode === "vision"
-        ? process.env.GEMINI_MODEL || "" // 現状のモデルは、すべて画像認識に対応しているため、このように記述
-        : process.env.GEMINI_MODEL || "";
-    return google(modelName);
-  }
 }
 
 /**
@@ -196,7 +146,7 @@ async function setupGlobalEventHandlers(
  * @param options.approvalCallback
  * @returns サブゴールの達成に成功した場合はtrue、失敗した場合はfalse。
  */
-export async function taskAutomationAgent(
+export async function taskAutomationAgent<TArgs = unknown>(
   subgoal: string,
   stagehand: Stagehand,
   state: AgentState,
@@ -205,9 +155,12 @@ export async function taskAutomationAgent(
   options: {
     isTestEnvironment?: boolean;
     maxLoops?: number;
-    tools?: CustomTool<any>[];
-    toolRegistry?: Map<string, CustomTool<any>>;
-    approvalCallback: ApprovalCallback;
+    tools?: CustomTool<z.ZodObject<any, any, any, any, any>, TArgs>[];
+    toolRegistry?: Map<
+      string,
+      CustomTool<z.ZodObject<any, any, any, any, any>, TArgs>
+    >;
+    approvalCallback: ApprovalCallback<TArgs>;
   },
 ): Promise<boolean> {
   const {
@@ -285,7 +238,15 @@ export async function taskAutomationAgent(
     }
 
     // 3. 承認: ユーザーに計画の実行許可を求める（介入モードによる）
-    const approvedPlan = await approvalCallback(toolCalls);
+    let approvedPlan;
+    try {
+      approvedPlan = await approvalCallback(
+        toolCalls as ToolCall<string, TArgs>[],
+      );
+    } catch (error: any) {
+      console.error(`承認プロセス中にエラーが発生しました: ${error.message}`);
+      return false;
+    }
     if (!approvedPlan) {
       console.log(
         "ユーザーが計画を拒否しました。サブゴールの実行を中断します。",
@@ -397,9 +358,12 @@ export async function taskAutomationAgent(
     await state.updatePages();
 
     // レートリミットを回避するために、各思考ループの間に短い待機時間を設ける
-    // const LLM_PROVIDER = process.env.LLM_PROVIDER || "google";
-    // Groqは特にレートリミットが厳しいため、長めに待機する
-    const waitMs = 3000; // LLM_PROVIDER === "groq" ? 3000 : 1000; // Groqなら3秒、他は1秒
+    const LLM_PROVIDER = process.env.LLM_PROVIDER || "google";
+    const defaultWaitMs = LLM_PROVIDER === "groq" ? 3000 : 1000;
+    const waitMs = parseInt(
+      process.env.LOOP_WAIT_MS || String(defaultWaitMs),
+      10,
+    );
     console.log(
       `  ...レートリミット対策のため ${waitMs / 1000}秒待機します...`,
     );

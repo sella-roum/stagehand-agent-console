@@ -81,11 +81,13 @@ export async function readCache(
  * 3. なければ、`observe`を実行してアクションを決定し、結果をキャッシュに保存してから実行します。
  * @param page - 操作対象のPageオブジェクト。
  * @param instruction - 実行したい操作の自然言語指示。
+ * @param overlayDuration - オーバーレイを表示する時間（ミリ秒）。
  * @throws {Error} `observe`で操作対象の要素が見つからなかった場合にエラーをスローします。
  */
 export async function actWithCache(
   page: Page,
   instruction: string,
+  overlayDuration: number = 1000,
 ): Promise<void> {
   const cachedAction = await readCache(page, instruction);
   if (cachedAction) {
@@ -109,7 +111,7 @@ export async function actWithCache(
 
   // ユーザーにどの要素が対象か視覚的にフィードバック
   await drawObserveOverlay(page, results);
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(overlayDuration);
   await clearOverlays(page);
 
   await page.act(actionToCache);

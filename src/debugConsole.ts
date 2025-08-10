@@ -6,7 +6,7 @@
 import type { Stagehand } from "@browserbasehq/stagehand";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { getLlmInstance } from "@/src/taskAutomationAgent";
+import { getLlmInstance } from "@/src/utils/llm";
 import { AgentState } from "@/src/agentState";
 import { InterventionMode } from "@/src/types";
 import { ToolCall } from "ai";

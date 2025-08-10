@@ -9,11 +9,9 @@ import { z } from "zod";
  * @param data - 検証対象のデータ。
  * @returns データがスキーマに準拠していればtrue、そうでなければfalse。
  */
-export function validateZodSchema(schema: z.ZodTypeAny, data: unknown) {
-  try {
-    schema.parse(data);
-    return true;
-  } catch {
-    return false;
-  }
+export function validateZodSchema(
+  schema: z.ZodTypeAny,
+  data: unknown,
+): boolean {
+  return schema.safeParse(data).success;
 }

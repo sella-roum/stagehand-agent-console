@@ -50,7 +50,10 @@ export type PreconditionResult =
   | { success: true }
   | { success: false; message: string };
 
-export type CustomTool<T extends z.ZodObject<any, any, any, any, any>> = {
+export type CustomTool<
+  T extends z.ZodObject<any, any, any, any, any>,
+  R = any,
+> = {
   name: string;
   description: string;
   schema: T;
@@ -61,11 +64,11 @@ export type CustomTool<T extends z.ZodObject<any, any, any, any, any>> = {
   precondition?: (
     state: AgentState,
     args: z.infer<T>,
-  ) => Promise<PreconditionResult>;
+  ) => Promise<PreconditionResult> | PreconditionResult;
   execute: (
     state: AgentState,
     args: z.infer<T>,
     llm: LanguageModel,
     initialTask: string,
-  ) => Promise<any>;
+  ) => Promise<R>;
 };

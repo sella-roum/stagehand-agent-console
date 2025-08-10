@@ -8,33 +8,38 @@ import { AgentState } from "@/src/agentState";
 import { planSubgoals } from "@/src/chiefAgent";
 import { taskAutomationAgent } from "@/src/taskAutomationAgent";
 import { AgentExecutionResult, CustomTool } from "@/src/types";
-import { LanguageModel, ToolCall, generateObject } from "ai";
+import { LanguageModel, ToolCall } from "ai";
+import { generateObjectWithRetry } from "@/src/utils/llm";
 import {
   progressEvaluationSchema,
   getProgressEvaluationPrompt,
 } from "@/src/prompts/progressEvaluation";
 import { updateMemoryAfterSubgoal } from "@/src/utils/memory";
+import { z } from "zod";
 
 /**
  * ユーザー承認コールバックの型定義。
  * @param plan - AIが生成した実行計画
  * @returns 承認された場合は計画を、拒否された場合はnullを返すPromise
  */
-export type ApprovalCallback = (
-  plan: ToolCall<string, any>[],
-) => Promise<ToolCall<string, any>[] | null>;
+export type ApprovalCallback<TArgs = unknown> = (
+  plan: ToolCall<string, TArgs>[],
+) => Promise<ToolCall<string, TArgs>[] | null>;
 
 /**
  * エージェントの実行設定
  */
-export interface OrchestratorConfig {
+export interface OrchestratorConfig<TArgs = unknown> {
   maxSubgoals?: number;
   maxLoopsPerSubgoal?: number;
   maxReplanAttempts?: number;
   isTestEnvironment?: boolean;
-  tools?: CustomTool<any>[];
-  toolRegistry?: Map<string, CustomTool<any>>;
-  approvalCallback: ApprovalCallback;
+  tools?: CustomTool<z.ZodObject<any, any, any, any, any>, TArgs>[];
+  toolRegistry?: Map<
+    string,
+    CustomTool<z.ZodObject<any, any, any, any, any>, TArgs>
+  >;
+  approvalCallback: ApprovalCallback<TArgs>;
 }
 
 /**
@@ -47,12 +52,12 @@ export interface OrchestratorConfig {
  * @returns タスクの最終結果。
  * @throws タスク実行中に解決不能なエラーが発生した場合。
  */
-export async function orchestrateAgentTask(
+export async function orchestrateAgentTask<TArgs = unknown>(
   task: string,
   stagehand: Stagehand,
   state: AgentState,
   llm: LanguageModel,
-  config: OrchestratorConfig,
+  config: OrchestratorConfig<TArgs>,
 ): Promise<AgentExecutionResult> {
   const {
     maxSubgoals = 10,
@@ -94,7 +99,7 @@ export async function orchestrateAgentTask(
         {
           ...config,
           maxLoops: maxLoopsPerSubgoal,
-          approvalCallback,
+          approvalCallback: approvalCallback as ApprovalCallback,
         },
       );
 
@@ -102,6 +107,8 @@ export async function orchestrateAgentTask(
         throw new Error(`サブゴール "${subgoal}" の実行に失敗しました。`);
       }
       completedSubgoals.push(subgoal);
+      // 成功後は再計画リトライ回数をリセット
+      replanCount = 0;
 
       // 2b. 記憶の更新
       await updateMemoryAfterSubgoal(
@@ -123,7 +130,7 @@ export async function orchestrateAgentTask(
         currentUrl,
       );
 
-      const { object: progress } = await generateObject({
+      const { object: progress } = await generateObjectWithRetry({
         model: llm,
         schema: progressEvaluationSchema,
         prompt: evalPrompt,
@@ -149,12 +156,14 @@ export async function orchestrateAgentTask(
           `🚨 再計画が必要です (${replanCount}/${maxReplanAttempts})。司令塔エージェントを呼び出します...`,
         );
         const errorContext = JSON.stringify({
-          name: error.originalError?.name || error.name,
-          message: error.originalError?.message || error.message,
-          failedTool: {
-            name: error.failedToolCall.toolName,
-            args: error.failedToolCall.args,
-          },
+          name: error.originalError?.name ?? error.name,
+          message: error.originalError?.message ?? error.message,
+          failedTool: error.failedToolCall
+            ? {
+                name: error.failedToolCall.toolName,
+                args: error.failedToolCall.args,
+              }
+            : undefined,
         });
         subgoals = await planSubgoals(task, llm, state, subgoal, errorContext);
         completedSubgoals.push(`${subgoal} (失敗)`);
@@ -170,7 +179,7 @@ export async function orchestrateAgentTask(
   // 3. 最終結果の取得
   const finalHistory = state.getHistory();
   const finishRecord = finalHistory.find(
-    (h) => h.toolCall.toolName === "finish",
+    (h) => h.toolCall?.toolName === "finish",
   );
   if (
     finishRecord &&
@@ -178,11 +187,15 @@ export async function orchestrateAgentTask(
     finishRecord.result.startsWith("SELF_EVALUATION_COMPLETE:")
   ) {
     console.log("✅ 全てのサブゴールの処理が完了しました。");
-    const resultJson = finishRecord.result.replace(
-      "SELF_EVALUATION_COMPLETE: ",
-      "",
-    );
-    return JSON.parse(resultJson);
+    const PREFIX = "SELF_EVALUATION_COMPLETE:";
+    const payload = finishRecord.result.slice(PREFIX.length).trimStart();
+    try {
+      return JSON.parse(payload);
+    } catch (e) {
+      throw new Error(
+        `完了結果のJSONパースに失敗しました: ${(e as Error).message}`,
+      );
+    }
   } else {
     throw new Error("エージェントはタスクを完了せずに終了しました。");
   }
