@@ -4,7 +4,7 @@ import {
   getSkillGenerationPrompt,
   skillGenerationSchema,
 } from "@/src/prompts/skillGeneration";
-import { getSafePath } from "@/utils";
+import { getSafePath } from "@/src/utils/file";
 import fs from "fs/promises";
 import path from "path";
 import { AgentState } from "@/src/agentState";
@@ -16,7 +16,12 @@ import { availableTools } from "@/src/tools";
 export interface Skill {
   name: string;
   description: string;
-  execute: (state: AgentState, args: any) => Promise<string>;
+  execute: (
+    state: AgentState,
+    args: any,
+    llm: LanguageModel,
+    initialTask: string,
+  ) => Promise<string>;
 }
 
 /**
@@ -72,13 +77,14 @@ export async function generateAndSaveSkill(
 
       const fileContent = `
 import { AgentState } from "@/src/agentState";
+import { LanguageModel } from "ai";
 // @ts-nocheck
 // このファイルはAIによって自動生成されました。
 // 人間によるレビューと承認を経て 'workspace/skills/approved' に移動されるまで、このスキルは有効になりません。
 
 export const description = "${result.skill_description}";
 
-export async function execute(state: AgentState, args: any): Promise<string> {
+export async function execute(state: AgentState, args: any, llm: LanguageModel, initialTask: string): Promise<string> {
   ${result.skill_code}
 }
 `;
@@ -137,6 +143,7 @@ export async function loadSkills(): Promise<Map<string, Skill>> {
         }
       }
     }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (e) {
     // 'approved' ディレクトリが存在しない場合は何もしない（初回起動時など）
   }

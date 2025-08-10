@@ -10,7 +10,7 @@ import {
   getChiefAgentReplanPrompt,
   chiefAgentSchema,
 } from "@/src/prompts/chief";
-import { getSafePath } from "@/utils";
+import { getSafePath } from "@/src/utils/file";
 import fs from "fs/promises";
 import { AgentState } from "./agentState";
 import { formatContext } from "./prompts/context";

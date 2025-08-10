@@ -23,11 +23,11 @@ import { AgentState } from "@/src/agentState";
 import { getBasePrompt } from "@/src/prompts/base";
 import { formatContext } from "@/src/prompts/context";
 import { availableTools, toolRegistry } from "@/src/tools/index";
-import { requestUserApproval } from "@/src/debugConsole";
 import { generateAndSaveSkill } from "@/src/skillManager";
 import { CustomTool } from "@/src/types";
 import { InvalidToolArgumentError } from "@/src/errors";
-import { updateMemoryAfterSubgoal } from "@/utils";
+import { updateMemoryAfterSubgoal } from "@/src/utils/memory";
+import { ApprovalCallback } from "./agentOrchestrator";
 
 /**
  * 再計画が必要であることを示すためのカスタムエラー
@@ -53,7 +53,9 @@ class ReplanNeededError extends Error {
  * @param tools - プロジェクト独自のカスタムツールの配列。
  * @returns Vercel AI SDKの`generateText`関数に渡すためのツールオブジェクト。
  */
-function mapCustomToolsToAITools(tools: CustomTool[]): Record<string, Tool> {
+function mapCustomToolsToAITools(
+  tools: CustomTool<any>[],
+): Record<string, Tool> {
   return tools.reduce(
     (acc, tool) => {
       acc[tool.name] = {
@@ -185,11 +187,13 @@ async function setupGlobalEventHandlers(
  * @param stagehand - Stagehandのインスタンス。
  * @param state - セッション全体で共有されるエージェントの状態。
  * @param originalTask - ユーザーが最初に与えた高レベルなタスク。
+ * @param llm - 使用する言語モデルのインスタンス。
  * @param options - テスト環境用の設定などを含むオプション。
  * @param options.isTestEnvironment
  * @param options.maxLoops
  * @param options.tools
  * @param options.toolRegistry
+ * @param options.approvalCallback
  * @returns サブゴールの達成に成功した場合はtrue、失敗した場合はfalse。
  */
 export async function taskAutomationAgent(
@@ -197,21 +201,23 @@ export async function taskAutomationAgent(
   stagehand: Stagehand,
   state: AgentState,
   originalTask: string,
+  llm: LanguageModel,
   options: {
     isTestEnvironment?: boolean;
     maxLoops?: number;
-    tools?: CustomTool[];
-    toolRegistry?: Map<string, CustomTool>;
-  } = {},
+    tools?: CustomTool<any>[];
+    toolRegistry?: Map<string, CustomTool<any>>;
+    approvalCallback: ApprovalCallback;
+  },
 ): Promise<boolean> {
   const {
     isTestEnvironment = false,
     maxLoops = 15,
     tools = availableTools,
     toolRegistry: customToolRegistry = toolRegistry,
+    approvalCallback,
   } = options;
 
-  const llm = getLlmInstance();
   const historyStartIndex = state.getHistory().length;
   let reflectionCount = 0;
   const maxReflections = 2;
@@ -279,9 +285,7 @@ export async function taskAutomationAgent(
     }
 
     // 3. 承認: ユーザーに計画の実行許可を求める（介入モードによる）
-    const approvedPlan = isTestEnvironment
-      ? toolCalls
-      : await requestUserApproval(state, toolCalls);
+    const approvedPlan = await approvalCallback(toolCalls);
     if (!approvedPlan) {
       console.log(
         "ユーザーが計画を拒否しました。サブゴールの実行を中断します。",
@@ -391,7 +395,15 @@ export async function taskAutomationAgent(
     });
 
     await state.updatePages();
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // レートリミットを回避するために、各思考ループの間に短い待機時間を設ける
+    // const LLM_PROVIDER = process.env.LLM_PROVIDER || "google";
+    // Groqは特にレートリミットが厳しいため、長めに待機する
+    const waitMs = 3000; // LLM_PROVIDER === "groq" ? 3000 : 1000; // Groqなら3秒、他は1秒
+    console.log(
+      `  ...レートリミット対策のため ${waitMs / 1000}秒待機します...`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
 
   console.warn(

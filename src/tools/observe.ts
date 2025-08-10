@@ -6,7 +6,8 @@
 
 import { z } from "zod";
 import { AgentState } from "@/src/agentState";
-import { drawObserveOverlay, clearOverlays } from "@/utils";
+import { drawObserveOverlay, clearOverlays } from "@/src/utils/ui";
+import { CustomTool } from "@/src/types";
 
 /**
  * `observe`ツールの入力スキーマ。
@@ -23,7 +24,7 @@ export const observeSchema = z.object({
 /**
  * `observe`ツールの定義オブジェクト。
  */
-export const observeTool = {
+export const observeTool: CustomTool<typeof observeSchema> = {
   name: "observe",
   description: "現在のページ上の操作可能な要素を探します。",
   schema: observeSchema,

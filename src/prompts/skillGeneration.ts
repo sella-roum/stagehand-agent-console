@@ -71,10 +71,11 @@ ${history}
     -   **skill_code:** 以下の「スキルコードの厳格な要件」に完全に従ってコードを生成してください。
 
 # スキルコードの厳格な要件
--   **構造:** すべてのロジックは \`export async function execute(state: AgentState, args: any): Promise<string>\` の中に直接記述してください。**内部で別の関数を定義してはいけません。**
+-   **構造:** すべてのロジックは \`export async function execute(state: AgentState, args: any, llm: LanguageModel, initialTask: string): Promise<string>\` の中に直接記述してください。**内部で別の関数を定義してはいけません。**
 -   **API使用法:**
     -   ブラウザ操作には \`state.getActivePage().act("指示")\` または \`state.getActivePage().act({ action: "指示" })\` を使用します。
     -   情報抽出には \`state.getActivePage().extract("指示")\` または \`state.getActivePage().extract({ instruction: "指示" })\` を使用します。
+    -   \`llm\` や \`initialTask\` は、より高度な判断が必要なスキルで必要に応じて利用できますが、基本的なブラウザ操作では \`state\` と \`args\` を主に使用します。
 -   **引数:** スキルが必要とする外部からの入力（例：ユーザー名、URL）は、\`args\` オブジェクトから取得してください (例: \`args.username\`)。
 -   **戻り値:** 必ず操作の成功を示す文字列を \`return\` してください。抽出したデータを返すこともできます。
 

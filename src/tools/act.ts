@@ -6,8 +6,9 @@
 
 import { z } from "zod";
 import { AgentState } from "@/src/agentState";
-import { drawObserveOverlay, clearOverlays } from "@/utils";
+import { drawObserveOverlay, clearOverlays } from "@/src/utils/ui";
 import { ElementNotFoundError } from "@/src/errors";
+import { CustomTool } from "@/src/types";
 
 /**
  * `act`ツールの入力スキーマ。
@@ -24,7 +25,7 @@ export const actSchema = z.object({
 /**
  * `act`ツールの定義オブジェクト。
  */
-export const actTool = {
+export const actTool: CustomTool<typeof actSchema> = {
   name: "act",
   description:
     "ページ上で特定の操作（クリック、入力、スクロールなど）を行います。",
@@ -35,7 +36,6 @@ export const actTool = {
    * 操作の信頼性を高めています。
    * @param state - 現在のエージェントの状態。
    * @param args - `actSchema`に基づいた引数。
-   * @param args.instruction
    * @returns 操作の実行結果を示す文字列。
    */
   execute: async (

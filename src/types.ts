@@ -50,18 +50,21 @@ export type PreconditionResult =
   | { success: true }
   | { success: false; message: string };
 
-export type CustomTool = {
+export type CustomTool<T extends z.ZodObject<any, any, any, any, any>> = {
   name: string;
   description: string;
-  schema: z.ZodObject<any, any, any, any, any>;
+  schema: T;
   /**
    * ツール実行前に、そのツールが現在の状況で実行可能かをチェックするオプショナルな関数。
    * 失敗した場合は、その理由を含むメッセージを返す。
    */
-  precondition?: (state: AgentState, args: any) => Promise<PreconditionResult>;
+  precondition?: (
+    state: AgentState,
+    args: z.infer<T>,
+  ) => Promise<PreconditionResult>;
   execute: (
     state: AgentState,
-    args: any,
+    args: z.infer<T>,
     llm: LanguageModel,
     initialTask: string,
   ) => Promise<any>;
