@@ -54,7 +54,7 @@ export async function drawObserveOverlay(page: Page, results: ObserveResult[]) {
           const overlay = document.createElement("div");
           overlay.setAttribute("stagehandObserve", "true");
           const rect = element.getBoundingClientRect();
-          overlay.style.position = "absolute";
+          overlay.style.position = "fixed";
           overlay.style.left = rect.left + "px";
           overlay.style.top = rect.top + "px";
           overlay.style.width = rect.width + "px";

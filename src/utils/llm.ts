@@ -17,7 +17,6 @@ const INITIAL_BACKOFF_MS = 1000;
  * @throws {Error} 必要なAPIキーが.envファイルに設定されていない場合にエラーをスローします。
  */
 export function getLlmInstance(): LanguageModel {
-  const agentMode = process.env.AGENT_MODE || "text";
   const LLM_PROVIDER = process.env.LLM_PROVIDER || "google";
 
   if (LLM_PROVIDER === "groq") {
@@ -26,7 +25,10 @@ export function getLlmInstance(): LanguageModel {
       throw new Error("GROQ_API_KEYが.envファイルに設定されていません。");
     const groq = createGroq({ apiKey: groqApiKey });
     // Groqは現在Vision非対応のため、モードに関わらずテキストモデルを使用
-    return groq(process.env.GROQ_MODEL || "");
+    const modelName = process.env.GROQ_MODEL || "";
+    if (!modelName)
+      throw new Error("GROQ_MODELが.envファイルに設定されていません。");
+    return groq(modelName);
   } else if (LLM_PROVIDER === "openrouter") {
     const openRouterApiKey = process.env.OPENROUTER_API_KEY;
     if (!openRouterApiKey)
@@ -39,10 +41,9 @@ export function getLlmInstance(): LanguageModel {
         "X-Title": "Stagehand Agent Console",
       },
     });
-    const modelName =
-      agentMode === "vision"
-        ? "" // Visionモードの場合、モデル名をOpenAIクライアントに任せる
-        : process.env.OPENROUTER_MODEL || "";
+    const modelName = process.env.OPENROUTER_MODEL || "";
+    if (!modelName)
+      throw new Error("OPENROUTER_MODELが.envファイルに設定されていません。");
     return openrouter(modelName);
   } else {
     // google
@@ -50,10 +51,9 @@ export function getLlmInstance(): LanguageModel {
     if (!googleApiKey)
       throw new Error("GOOGLE_API_KEYが.envファイルに設定されていません。");
     const google = createGoogleGenerativeAI({ apiKey: googleApiKey });
-    const modelName =
-      agentMode === "vision"
-        ? process.env.GEMINI_MODEL || "" // 現状のモデルは、すべて画像認識に対応しているため、このように記述
-        : process.env.GEMINI_MODEL || "";
+    const modelName = process.env.GEMINI_MODEL || "";
+    if (!modelName)
+      throw new Error("GEMINI_MODELが.envファイルに設定されていません。");
     return google(modelName);
   }
 }
@@ -76,8 +76,11 @@ export async function generateTextWithRetry(
       // HTTP 429 (Too Many Requests) エラーまたはメッセージ内容で判定
       if (
         error.response?.status === 429 ||
-        error.message?.includes("Rate limit") ||
-        error.message?.includes("rate limit")
+        error.status === 429 ||
+        error.code === "rate_limit_exceeded" ||
+        error.message?.toLowerCase().includes("rate limit") ||
+        error.message?.toLowerCase().includes("quota exceeded") ||
+        error.message?.toLowerCase().includes("too many requests")
       ) {
         const backoffTime = INITIAL_BACKOFF_MS * Math.pow(2, i);
         console.warn(
@@ -126,8 +129,11 @@ export async function generateObjectWithRetry<
       // HTTP 429 (Too Many Requests) エラーまたはメッセージ内容で判定
       if (
         error.response?.status === 429 ||
-        error.message?.includes("Rate limit") ||
-        error.message?.includes("rate limit")
+        error.status === 429 ||
+        error.code === "rate_limit_exceeded" ||
+        error.message?.toLowerCase().includes("rate limit") ||
+        error.message?.toLowerCase().includes("quota exceeded") ||
+        error.message?.toLowerCase().includes("too many requests")
       ) {
         const backoffTime = INITIAL_BACKOFF_MS * Math.pow(2, i);
         console.warn(

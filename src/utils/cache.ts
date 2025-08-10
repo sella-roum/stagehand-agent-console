@@ -5,6 +5,9 @@ import { ObserveResult, Page } from "@browserbasehq/stagehand";
 import fs from "fs/promises";
 import chalk from "chalk";
 import { drawObserveOverlay, clearOverlays } from "./ui";
+import lockfile from "proper-lockfile";
+
+const CACHE_FILE = "cache.json";
 
 /**
  * キャッシュキーを生成します。URLと指示を基に一意のキーを作成します。
@@ -36,19 +39,27 @@ export async function simpleCache(
   actionToCache: ObserveResult,
 ) {
   const key = getCacheKey(page.url(), instruction);
+  let release;
   try {
+    // ファイルをロックして競合状態を防ぐ
+    release = await lockfile.lock(CACHE_FILE, { retries: 5 });
     let cache: Record<string, ObserveResult> = {};
     try {
-      const existingCache = await fs.readFile("cache.json", "utf-8");
+      const existingCache = await fs.readFile(CACHE_FILE, "utf-8");
       cache = JSON.parse(existingCache);
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error) {
       // ファイルが存在しない場合は、空のキャッシュから開始
     }
     cache[key] = actionToCache;
-    await fs.writeFile("cache.json", JSON.stringify(cache, null, 2));
+    await fs.writeFile(CACHE_FILE, JSON.stringify(cache, null, 2));
   } catch (error) {
     console.error(chalk.red("キャッシュへの保存に失敗しました:"), error);
+  } finally {
+    // 必ずロックを解放する
+    if (release) {
+      await release();
+    }
   }
 }
 
@@ -63,14 +74,21 @@ export async function readCache(
   instruction: string,
 ): Promise<ObserveResult | null> {
   const key = getCacheKey(page.url(), instruction);
+  let release;
   try {
-    const existingCache = await fs.readFile("cache.json", "utf-8");
+    // 読み込み時もロックを取得して、書き込み中の不完全なデータを読まないようにする
+    release = await lockfile.lock(CACHE_FILE, { retries: 5 });
+    const existingCache = await fs.readFile(CACHE_FILE, "utf-8");
     const cache: Record<string, ObserveResult> = JSON.parse(existingCache);
     return cache[key] || null;
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (error) {
     // ファイルが存在しない、または読み込めない場合はキャッシュなしとみなす
     return null;
+  } finally {
+    if (release) {
+      await release();
+    }
   }
 }
 
