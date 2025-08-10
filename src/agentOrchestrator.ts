@@ -62,9 +62,10 @@ export async function orchestrateAgentTask<TArgs = unknown>(
   console.log(`👑 司令塔エージェントがタスク計画を開始: "${task}"`);
   let subgoals = await planSubgoals(task, llm);
   if (subgoals.length > maxSubgoals) {
-    throw new Error(
-      `計画されたサブゴールが多すぎます: ${subgoals.length} > ${maxSubgoals}`,
+    console.warn(
+      `計画されたサブゴールが多すぎます: ${subgoals.length} > ${maxSubgoals}。先頭${maxSubgoals}件に制限します。`,
     );
+    subgoals = subgoals.slice(0, maxSubgoals);
   }
 
   const completedSubgoals: string[] = [];
@@ -102,15 +103,21 @@ export async function orchestrateAgentTask<TArgs = unknown>(
       // 成功後は再計画リトライ回数をリセット
       replanCount = 0;
 
-      // 2b. 記憶の更新
-      await updateMemoryAfterSubgoal(
-        state,
-        llm,
-        task,
-        subgoal,
-        historyStartIndex,
-        200,
-      );
+      // 2b. 記憶の更新（失敗しても全体は継続）
+      try {
+        await updateMemoryAfterSubgoal(
+          state,
+          llm,
+          task,
+          subgoal,
+          historyStartIndex,
+          200,
+        );
+      } catch (e: any) {
+        console.warn(
+          `メモリ更新に失敗しました（継続します）: ${e?.message ?? e}`,
+        );
+      }
 
       // 2c. 進捗評価
       console.log("🕵️‍♂️ タスク全体の進捗を評価中...");

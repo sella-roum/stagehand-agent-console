@@ -5,7 +5,7 @@
  * Vercel AI SDKを利用して、Google Gemini, Groq, OpenRouterなどのLLMを動的に切り替え可能です。
  */
 
-import { Stagehand } from "@browserbasehq/stagehand";
+import { Stagehand, Page } from "@browserbasehq/stagehand";
 import { CoreMessage, LanguageModel, Tool, ToolCall } from "ai";
 import { z } from "zod";
 
@@ -20,6 +20,35 @@ import {
   generateTextWithRetry,
   generateObjectWithRetry,
 } from "@/src/utils/llm";
+
+/**
+ * ログ出力用に機密情報をマスキングするヘルパー関数
+ * @param obj - マスキング対象のオブジェクト
+ * @returns 機密情報がマスクされたオブジェクトのクローン
+ */
+function maskSensitive<T extends Record<string, unknown>>(obj: T): T {
+  const SENSITIVE_KEYS = [
+    "password",
+    "pass",
+    "token",
+    "apiKey",
+    "secret",
+    "authorization",
+  ];
+  const clone: any = Array.isArray(obj)
+    ? [...(obj as any)]
+    : { ...(obj as any) };
+  for (const k of Object.keys(clone)) {
+    if (clone[k] && typeof clone[k] === "object") {
+      clone[k] = maskSensitive(clone[k]);
+    } else if (
+      SENSITIVE_KEYS.some((sk) => k.toLowerCase().includes(sk.toLowerCase()))
+    ) {
+      clone[k] = "***redacted***";
+    }
+  }
+  return clone;
+}
 
 /**
  * 再計画が必要であることを示すためのカスタムエラー
@@ -66,11 +95,19 @@ function mapCustomToolsToAITools<TSchema extends z.AnyZodObject>(
  * @param stagehand - Stagehandのインスタンス。
  * @param llm - Vision分析に使用する言語モデルのインスタンス。
  */
+const POPUP_HANDLER_KEY = Symbol.for("stagehand:popup-handler-installed");
+
 async function setupGlobalEventHandlers(
   stagehand: Stagehand,
   llm: LanguageModel,
 ) {
-  stagehand.page.context().on("page", async (newPage) => {
+  const context = stagehand.page.context() as any;
+  if (context[POPUP_HANDLER_KEY]) {
+    return; // 既にインストール済み
+  }
+  context[POPUP_HANDLER_KEY] = true;
+
+  context.on("page", async (newPage: Page) => {
     try {
       console.log(
         `\n🚨 新しいページ/ポップアップが検出されました: ${await newPage.title()}`,
@@ -104,7 +141,7 @@ async function setupGlobalEventHandlers(
                 type: "text",
                 text: "この新しいページは、メインのタスクを妨げる不要なポップアップ（広告、クッキー同意など）ですか？",
               },
-              { type: "image", image: new URL(screenshotDataUrl) },
+              { type: "image", image: screenshotDataUrl },
             ],
           },
         ],
@@ -234,13 +271,23 @@ export async function taskAutomationAgent<TArgs = unknown>(
       console.error(
         `承認プロセス中にエラーが発生しました: ${error.message}\n失敗した計画の概要 (先頭3件): ${planSummary}`,
       );
-      return false;
+      // 再計画へ
+      throw new ReplanNeededError(
+        "承認プロセスでエラーが発生しました。",
+        error,
+        (toolCalls && toolCalls[0]) as ToolCall<string, unknown>,
+      );
     }
     if (!approvedPlan || approvedPlan.length === 0) {
       console.log(
         "ユーザーが計画を拒否しました。サブゴールの実行を中断します。",
       );
-      return false;
+      // 再計画へ
+      throw new ReplanNeededError(
+        "ユーザーが計画を拒否しました。",
+        new Error("Plan rejected by user"),
+        (toolCalls && toolCalls[0]) as ToolCall<string, unknown>,
+      );
     }
 
     // 4. 実行: 承認されたツールを実行し、結果を収集
@@ -287,7 +334,8 @@ export async function taskAutomationAgent<TArgs = unknown>(
             );
           }
         }
-        console.log(`  ⚡️ 実行中: ${toolName}(${JSON.stringify(parsedArgs)})`);
+        const safeArgs = maskSensitive(parsedArgs as Record<string, unknown>);
+        console.log(`  ⚡️ 実行中: ${toolName}(${JSON.stringify(safeArgs)})`);
         const result = await tool.execute(state, parsedArgs, llm, originalTask);
         const resultLog =
           typeof result === "object" ? JSON.stringify(result, null, 2) : result;
