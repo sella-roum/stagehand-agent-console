@@ -8,6 +8,7 @@ import { createHash, createHmac } from "node:crypto";
 import chalk from "chalk";
 import lockfile, { LockOptions } from "proper-lockfile";
 import { drawObserveOverlay, clearOverlays } from "./ui";
+import { ElementNotFoundError } from "@/src/errors";
 
 // 専用ディレクトリ内にキャッシュを保存し、パスの安全性を確保
 const CACHE_DIR = path.resolve(process.cwd(), ".stagehand");
@@ -31,14 +32,15 @@ async function ensureCacheDir() {
  */
 function getCacheKey(url: string, instruction: string): string {
   const secret = process.env.STAGEHAND_CACHE_SALT;
-  const hasher = secret ? createHmac("sha256", secret) : createHash("sha256");
   try {
     const urlObject = new URL(url);
     const site = `${urlObject.origin}${urlObject.pathname}`;
     const payload = JSON.stringify({ site, instruction });
+    const hasher = secret ? createHmac("sha256", secret) : createHash("sha256");
     return hasher.update(payload).digest("hex");
   } catch (e) {
     // about:blankなどの場合は指示のみのハッシュ
+    const hasher = secret ? createHmac("sha256", secret) : createHash("sha256");
     return hasher.update(instruction).digest("hex");
   }
 }
@@ -47,9 +49,26 @@ function getCacheKey(url: string, instruction: string): string {
  * ファイルロックのための共通オプション。堅牢性を高めます。
  */
 const lockOptions: LockOptions = {
-  stale: 10_000, // 10秒でロックを古くなったと判断
-  retries: { retries: 5, factor: 1.5, minTimeout: 100, maxTimeout: 1000 },
+  stale: Number(process.env.STAGEHAND_CACHE_LOCK_STALE_MS ?? 10_000),
+  retries: {
+    retries: Number(process.env.STAGEHAND_CACHE_LOCK_RETRIES ?? 5),
+    factor: Number(process.env.STAGEHAND_CACHE_LOCK_BACKOFF_FACTOR ?? 1.5),
+    minTimeout: Number(process.env.STAGEHAND_CACHE_LOCK_MIN_MS ?? 100),
+    maxTimeout: Number(process.env.STAGEHAND_CACHE_LOCK_MAX_MS ?? 1000),
+  },
 };
+
+/**
+ * キャッシュオブジェクトをファイルにアトミックに書き込みます。
+ * @param cache - 書き込むキャッシュオブジェクト。
+ */
+async function writeCacheObject(cache: Record<string, ObserveResult>) {
+  const tmpFile = `${CACHE_FILE}.tmp`;
+  await fs.writeFile(tmpFile, JSON.stringify(cache, null, 2), {
+    mode: 0o600,
+  });
+  await fs.rename(tmpFile, CACHE_FILE);
+}
 
 /**
  * `observe`の結果を`cache.json`にアトミックに保存します。
@@ -84,11 +103,7 @@ export async function simpleCache(
       // ファイルが存在しない場合は、空のキャッシュから開始
     }
     cache[key] = actionToCache;
-
-    // アトミックな書き込み（テンポラリファイル -> rename）
-    const tmpFile = `${CACHE_FILE}.tmp`;
-    await fs.writeFile(tmpFile, JSON.stringify(cache, null, 2));
-    await fs.rename(tmpFile, CACHE_FILE);
+    await writeCacheObject(cache);
   } catch (error) {
     console.error(chalk.red("キャッシュへの保存に失敗しました:"), error);
   } finally {
@@ -163,9 +178,7 @@ export async function deleteCacheKey(
     }
     if (key in cache) {
       delete cache[key];
-      const tmpFile = `${CACHE_FILE}.tmp`;
-      await fs.writeFile(tmpFile, JSON.stringify(cache, null, 2));
-      await fs.rename(tmpFile, CACHE_FILE);
+      await writeCacheObject(cache);
     }
   } finally {
     if (release) await release();
@@ -217,8 +230,11 @@ export async function actWithCache(
   }
 
   if (results.length === 0) {
-    throw new Error(
-      `キャッシュ用の要素が見つかりませんでした: "${instruction}"`,
+    throw new ElementNotFoundError(
+      `キャッシュ用の要素が見つかりませんでした: ${instruction}`,
+      "act_with_cache",
+      { instruction },
+      instruction,
     );
   }
 
