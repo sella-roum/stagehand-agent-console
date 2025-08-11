@@ -5,7 +5,12 @@
  */
 
 import { Page, BrowserContext, Stagehand } from "@browserbasehq/stagehand";
-import { ExecutionRecord, TabInfo, InterventionMode } from "@/src/types";
+import {
+  ExecutionRecord,
+  TabInfo,
+  InterventionMode,
+  Subgoal,
+} from "@/src/types";
 import * as readline from "node:readline/promises";
 import fs from "fs/promises";
 import { getSafePath } from "@/src/utils/file";
@@ -35,6 +40,8 @@ export class AgentState {
   private longTermMemory: string[] = [];
   // 完了したサブゴールを記録する
   private completedSubgoals: string[] = [];
+  // 現在実行中のサブゴール
+  private currentSubgoal: Subgoal | null = null;
 
   /**
    * AgentStateの新しいインスタンスを生成します。
@@ -47,11 +54,26 @@ export class AgentState {
   }
 
   /**
+   * 現在実行中のサブゴールを設定します。
+   * @param subgoal - 現在のサブゴールオブジェクト。
+   */
+  public setCurrentSubgoal(subgoal: Subgoal): void {
+    this.currentSubgoal = subgoal;
+  }
+
+  /**
    * 実行履歴に新しいレコードを追加します。
    * @param record - 追加する実行レコード。
    */
-  addHistory(record: ExecutionRecord): void {
-    this.history.push(record);
+  addHistory(
+    record: Omit<ExecutionRecord, "subgoalDescription" | "successCriteria">,
+  ): void {
+    const fullRecord: ExecutionRecord = {
+      ...record,
+      subgoalDescription: this.currentSubgoal?.description,
+      successCriteria: this.currentSubgoal?.successCriteria,
+    };
+    this.history.push(fullRecord);
   }
 
   /**
@@ -100,6 +122,16 @@ export class AgentState {
    */
   public addToWorkingMemory(fact: string): void {
     this.workingMemory.push(fact);
+  }
+
+  /**
+   * QA Agentの検証失敗フィードバックをワーキングメモリに追加します。
+   * @param reason - 検証が失敗した理由。
+   */
+  public addQAFailureFeedback(reason: string): void {
+    this.addToWorkingMemory(
+      `[検証失敗] 直前の行動の結果、成功条件が満たされませんでした。理由: ${reason}`,
+    );
   }
 
   /**

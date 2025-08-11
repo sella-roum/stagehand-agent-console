@@ -1,7 +1,7 @@
 /**
  * @file 司令塔エージェント(Chief Agent)の機能を提供します。
  * このエージェントは、ユーザーから与えられた高レベルなタスクを分析し、
- * 実行可能なサブゴールのリストに分解（計画）する役割を担います。
+ * 実行可能なサブゴールのリストに分解（計画）する役割を担します。
  */
 
 import { LanguageModel } from "ai";
@@ -15,6 +15,7 @@ import fs from "fs/promises";
 import { AgentState } from "./agentState";
 import { formatContext } from "./prompts/context";
 import { generateObjectWithRetry } from "@/src/utils/llm";
+import { Plan, Subgoal } from "./types";
 
 /**
  * 司令塔エージェントとして、タスクの計画または再計画を行います。
@@ -23,15 +24,15 @@ import { generateObjectWithRetry } from "@/src/utils/llm";
  * @param state - (オプション) 再計画時に現在のエージェントの状態を渡す。
  * @param failedSubgoal - (オプション) 再計画のトリガーとなった失敗したサブゴール。
  * @param errorContext - (オプション) 再計画のトリガーとなったエラー情報。
- * @returns サブゴールの文字列を含む配列。
+ * @returns サブゴールの配列。
  */
 export async function planSubgoals(
   task: string,
   llm: LanguageModel,
   state?: AgentState,
-  failedSubgoal?: string,
+  failedSubgoal?: Subgoal,
   errorContext?: string,
-): Promise<string[]> {
+): Promise<Plan> {
   // 再計画パラメータの整合性チェック
   const isReplanMode = state && failedSubgoal && errorContext;
 
@@ -57,7 +58,7 @@ export async function planSubgoals(
       task,
       context,
       completedSubgoals,
-      failedSubgoal,
+      failedSubgoal: failedSubgoal.description,
       errorContext,
     });
     planFileName = `replan_${Date.now()}.json`;
@@ -74,9 +75,10 @@ export async function planSubgoals(
   });
 
   console.log("📝 計画の理由:", plan.reasoning);
-  console.log("📋 生成されたサブゴール:");
-  plan.subgoals.forEach((goal: string, index: number) => {
-    console.log(`  ${index + 1}. ${goal}`);
+  console.log("📋 生成されたサブゴールと成功条件:");
+  plan.subgoals.forEach((goal: Subgoal, index: number) => {
+    console.log(`  ${index + 1}. [サブゴール] ${goal.description}`);
+    console.log(`     [成功条件] ${goal.successCriteria}`);
   });
 
   try {

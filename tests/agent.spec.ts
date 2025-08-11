@@ -12,7 +12,7 @@ import { runAgentTask } from "@/src/agentRunner";
 // AIエージェントの応答には時間がかかるため、テストのタイムアウトを5分に設定
 test.setTimeout(300000);
 
-test.describe("Stagehand AI Agent", () => {
+test.describe("Stagehand AI Agent - E2E Tests", () => {
   let stagehand: Stagehand;
 
   // 各テストの実行前に、新しいStagehandインスタンスを初期化する
@@ -56,6 +56,44 @@ test.describe("Stagehand AI Agent", () => {
     // 最終的にGitHubリポジトリのページに到達しているか
     const finalUrl = stagehand.page.url();
     expect(finalUrl).toContain("github.com/browserbase/stagehand");
+  });
+
+  /**
+   * @description [新規追加] QA Agentが失敗を検知し、エージェントが自己修復して
+   * 最終的にタスクを成功させるシナリオをテストします。
+   */
+  test("should recover from a QA failure and complete the task", async () => {
+    // 1. 初期ページを設定
+    // このページには 'Login' と 'Sign In' という2つの似たボタンがある
+    await stagehand.page.setContent(`
+      <html>
+        <body>
+          <h1>Welcome</h1>
+          <button onclick="document.body.innerHTML = '<h1>Wrong Page</h1>'">Login</button>
+          <button onclick="document.body.innerHTML = '<h1>Dashboard</h1>'">Sign In</button>
+        </body>
+      </html>
+    `);
+
+    // 2. タスクを定義
+    // エージェントは最初に 'Login' をクリックするかもしれないが、成功条件は 'Dashboard' への遷移
+    const task = "ダッシュボードにアクセスするためにサインインしてください。";
+
+    // 3. エージェントを実行
+    const result = await runAgentTask(task, stagehand, {
+      maxSubgoals: 3,
+      maxLoopsPerSubgoal: 5,
+    });
+
+    // 4. 最終結果を検証
+    // 自己修復を経て、最終的には成功しているはず
+    expect(result.is_success).toBe(true);
+    expect(result.reasoning).toContain("ダッシュボード");
+
+    // 5. 最終的なページの状態を検証
+    // 'Sign In' ボタンがクリックされ、Dashboardにいるはず
+    const pageContent = await stagehand.page.textContent("body");
+    expect(pageContent).toContain("Dashboard");
   });
 
   /**
