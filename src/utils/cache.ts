@@ -10,6 +10,17 @@ import lockfile, { LockOptions } from "proper-lockfile";
 import { drawObserveOverlay, clearOverlays } from "./ui";
 import { ElementNotFoundError } from "@/src/errors";
 
+/**
+ * 文字列を数値に安全に変換します。パースできない場合はフォールバック値を返します。
+ * @param value - 変換する文字列またはundefined。
+ * @param fallback - パース失敗時に返すデフォルト値。
+ * @returns パースされた数値またはフォールバック値。
+ */
+function toNum(value: string | undefined, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 // 専用ディレクトリ内にキャッシュを保存し、パスの安全性を確保
 const CACHE_DIR = path.resolve(process.cwd(), ".stagehand");
 const CACHE_FILE =
@@ -49,12 +60,12 @@ function getCacheKey(url: string, instruction: string): string {
  * ファイルロックのための共通オプション。堅牢性を高めます。
  */
 const lockOptions: LockOptions = {
-  stale: Number(process.env.STAGEHAND_CACHE_LOCK_STALE_MS ?? 10_000),
+  stale: toNum(process.env.STAGEHAND_CACHE_LOCK_STALE_MS, 10_000),
   retries: {
-    retries: Number(process.env.STAGEHAND_CACHE_LOCK_RETRIES ?? 5),
-    factor: Number(process.env.STAGEHAND_CACHE_LOCK_BACKOFF_FACTOR ?? 1.5),
-    minTimeout: Number(process.env.STAGEHAND_CACHE_LOCK_MIN_MS ?? 100),
-    maxTimeout: Number(process.env.STAGEHAND_CACHE_LOCK_MAX_MS ?? 1000),
+    retries: toNum(process.env.STAGEHAND_CACHE_LOCK_RETRIES, 5),
+    factor: toNum(process.env.STAGEHAND_CACHE_LOCK_BACKOFF_FACTOR, 1.5),
+    minTimeout: toNum(process.env.STAGEHAND_CACHE_LOCK_MIN_MS, 100),
+    maxTimeout: toNum(process.env.STAGEHAND_CACHE_LOCK_MAX_MS, 1000),
   },
 };
 
@@ -85,7 +96,9 @@ export async function simpleCache(
     await ensureCacheDir();
   } catch (e) {
     console.warn(
-      chalk.yellow("キャッシュディレクトリ作成に失敗したため、書き込みをスキップします:"),
+      chalk.yellow(
+        "キャッシュディレクトリ作成に失敗したため、書き込みをスキップします:",
+      ),
       e,
     );
     return;
@@ -104,6 +117,8 @@ export async function simpleCache(
             `キャッシュが上限(${MAX_CACHE_SIZE} bytes)超過のためリセット: ${CACHE_FILE}`,
           ),
         );
+        // 既存の巨大ファイルを空でリセットして回復可能にする
+        await writeCacheObject("{}");
       } else {
         const existingCache = await fs.readFile(CACHE_FILE, "utf-8");
         cache = JSON.parse(existingCache);
@@ -147,7 +162,9 @@ export async function readCache(
   } catch (e) {
     if (process.env.DEBUG_CACHE === "1") {
       console.warn(
-        chalk.yellow("キャッシュディレクトリ作成に失敗したため、読み取りをスキップします:"),
+        chalk.yellow(
+          "キャッシュディレクトリ作成に失敗したため、読み取りをスキップします:",
+        ),
         e,
       );
     }
@@ -178,7 +195,9 @@ export async function readCache(
     } catch (e) {
       if (process.env.DEBUG_CACHE === "1") {
         console.warn(
-          chalk.yellow("キャッシュファイルの JSON 解析に失敗しました。読み取りをスキップします:"),
+          chalk.yellow(
+            "キャッシュファイルの JSON 解析に失敗しました。読み取りをスキップします:",
+          ),
           e,
         );
       }
@@ -207,7 +226,9 @@ export async function deleteCacheKey(
     await ensureCacheDir();
   } catch (e) {
     console.warn(
-      chalk.yellow("キャッシュディレクトリ作成に失敗したため、削除をスキップします:"),
+      chalk.yellow(
+        "キャッシュディレクトリ作成に失敗したため、削除をスキップします:",
+      ),
       e,
     );
     return;
