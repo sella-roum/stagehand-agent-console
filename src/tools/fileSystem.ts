@@ -6,9 +6,11 @@
 import { z } from "zod";
 import { AgentState } from "@/src/agentState";
 import { confirmAction } from "@/src/debugConsole";
-import { getSafePath } from "@/utils";
+import { getSafePath } from "@/src/utils/file";
 import fs from "fs/promises";
-import { PreconditionResult } from "@/src/types";
+import { PreconditionResult, CustomTool } from "@/src/types";
+import { InvalidToolArgumentError } from "../errors";
+import { Buffer } from "buffer";
 
 // --- writeFile Tool ---
 
@@ -23,7 +25,7 @@ export const writeFileSchema = z.object({
 /**
  * `write_file`ツールの定義オブジェクト。
  */
-export const writeFileTool = {
+export const writeFileTool: CustomTool<typeof writeFileSchema, string> = {
   name: "write_file",
   description:
     "テキストコンテンツをローカルの'workspace'ディレクトリ内のファイルに書き出します。",
@@ -42,6 +44,16 @@ export const writeFileTool = {
     state: AgentState,
     { filename, content }: z.infer<typeof writeFileSchema>,
   ): Promise<string> => {
+    const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MBの上限を設定
+
+    if (Buffer.byteLength(content, "utf8") > MAX_FILE_SIZE_BYTES) {
+      throw new InvalidToolArgumentError(
+        `書き込みコンテンツがサイズ上限(${MAX_FILE_SIZE_BYTES}バイト)を超えています。`,
+        "write_file",
+        { filename, content: `(コンテンツ省略: ${content.length}文字)` },
+      );
+    }
+
     // AgentStateから共有のreadlineインターフェースを取得
     if (!state.rl) {
       throw new Error(
@@ -74,7 +86,7 @@ export const readFileSchema = z.object({
 /**
  * `read_file`ツールの定義オブジェクト。
  */
-export const readFileTool = {
+export const readFileTool: CustomTool<typeof readFileSchema, string> = {
   name: "read_file",
   description:
     "ローカルの'workspace'ディレクトリ内のファイルの内容を読み込みます。",
@@ -94,6 +106,7 @@ export const readFileTool = {
       const filePath = getSafePath(filename);
       await fs.access(filePath); // ファイルの存在とアクセス権を確認
       return { success: true };
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error) {
       return {
         success: false,
@@ -129,6 +142,15 @@ export const readFileTool = {
       throw new Error("ユーザーがファイル読み込みを拒否しました。");
 
     const readPath = getSafePath(filename);
+    const stat = await fs.stat(readPath);
+    const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+    if (stat.size > MAX_FILE_SIZE_BYTES) {
+      throw new InvalidToolArgumentError(
+        `読み込み対象ファイルがサイズ上限(${MAX_FILE_SIZE_BYTES}バイト)を超えています。`,
+        "read_file",
+        { filename, size: stat.size },
+      );
+    }
     return await fs.readFile(readPath, "utf-8");
   },
 };

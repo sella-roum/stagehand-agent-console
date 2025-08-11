@@ -4,16 +4,17 @@
  * 実行可能なサブゴールのリストに分解（計画）する役割を担います。
  */
 
-import { LanguageModel, generateObject } from "ai";
+import { LanguageModel } from "ai";
 import {
   getChiefAgentPrompt,
   getChiefAgentReplanPrompt,
   chiefAgentSchema,
 } from "@/src/prompts/chief";
-import { getSafePath } from "@/utils";
+import { getSafePath } from "@/src/utils/file";
 import fs from "fs/promises";
 import { AgentState } from "./agentState";
 import { formatContext } from "./prompts/context";
+import { generateObjectWithRetry } from "@/src/utils/llm";
 
 /**
  * 司令塔エージェントとして、タスクの計画または再計画を行います。
@@ -32,18 +33,12 @@ export async function planSubgoals(
   errorContext?: string,
 ): Promise<string[]> {
   // 再計画パラメータの整合性チェック
-  const replanParams = [state, failedSubgoal, errorContext];
-  const providedCount = replanParams.filter((p) => p !== undefined).length;
-  if (providedCount > 0 && providedCount < 3) {
-    throw new Error(
-      "再計画モードでは、state、failedSubgoal、errorContextのすべてが必要です",
-    );
-  }
+  const isReplanMode = state && failedSubgoal && errorContext;
 
   let prompt: string;
   let planFileName = "plan.json";
 
-  if (state && failedSubgoal && errorContext) {
+  if (isReplanMode) {
     // --- 再計画モード ---
     console.log("👑 司令塔エージェントがタスクを再計画...");
     const PAGE_SUMMARY_LIMIT = 1000; // 設定可能な定数として定義
@@ -72,7 +67,7 @@ export async function planSubgoals(
     prompt = getChiefAgentPrompt(task);
   }
 
-  const { object: plan } = await generateObject({
+  const { object: plan } = await generateObjectWithRetry({
     model: llm,
     prompt,
     schema: chiefAgentSchema,
@@ -80,7 +75,7 @@ export async function planSubgoals(
 
   console.log("📝 計画の理由:", plan.reasoning);
   console.log("📋 生成されたサブゴール:");
-  plan.subgoals.forEach((goal, index) => {
+  plan.subgoals.forEach((goal: string, index: number) => {
     console.log(`  ${index + 1}. ${goal}`);
   });
 

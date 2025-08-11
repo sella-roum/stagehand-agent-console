@@ -6,7 +6,8 @@
 
 import { z } from "zod";
 import { AgentState } from "@/src/agentState";
-import { drawObserveOverlay, clearOverlays } from "@/utils";
+import { drawObserveOverlay, clearOverlays } from "@/src/utils/ui";
+import { CustomTool } from "@/src/types";
 
 /**
  * `observe`ツールの入力スキーマ。
@@ -14,7 +15,7 @@ import { drawObserveOverlay, clearOverlays } from "@/utils";
 export const observeSchema = z.object({
   instruction: z
     .string()
-    .nullable()
+    .optional()
     .describe(
       "探したい要素の説明。例: 'すべてのボタン'。引数がない場合はページ上の主要な要素を観察します。",
     ),
@@ -23,7 +24,7 @@ export const observeSchema = z.object({
 /**
  * `observe`ツールの定義オブジェクト。
  */
-export const observeTool = {
+export const observeTool: CustomTool<typeof observeSchema, any> = {
   name: "observe",
   description: "現在のページ上の操作可能な要素を探します。",
   schema: observeSchema,
@@ -38,18 +39,21 @@ export const observeTool = {
   execute: async (
     state: AgentState,
     { instruction }: z.infer<typeof observeSchema>,
-  ): Promise<any> => {
+  ) => {
     const page = state.getActivePage();
     const results = instruction
       ? await page.observe(instruction)
       : await page.observe();
 
     if (results.length > 0) {
-      // ユーザーがどの要素が対象か視覚的に理解しやすくするためのオーバーレイ表示
-      console.log("  ...観察対象をハイライト表示します。");
-      await drawObserveOverlay(page, results);
-      await new Promise((resolve) => setTimeout(resolve, 2000)); // ユーザーが確認するための待機
-      await clearOverlays(page);
+      try {
+        // ユーザーがどの要素が対象か視覚的に理解しやすくするためのオーバーレイ表示
+        console.log("  ...観察対象をハイライト表示します。");
+        await drawObserveOverlay(page, results);
+        await new Promise((resolve) => setTimeout(resolve, 2000)); // ユーザーが確認するための待機
+      } finally {
+        await clearOverlays(page);
+      }
     }
     return results;
   },

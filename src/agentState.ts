@@ -8,7 +8,7 @@ import { Page, BrowserContext, Stagehand } from "@browserbasehq/stagehand";
 import { ExecutionRecord, TabInfo, InterventionMode } from "@/src/types";
 import * as readline from "node:readline/promises";
 import fs from "fs/promises";
-import { getSafePath } from "@/utils";
+import { getSafePath } from "@/src/utils/file";
 
 const MEMORY_FILE = "memory.json";
 

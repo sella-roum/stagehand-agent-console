@@ -6,16 +6,11 @@
 import type { Stagehand } from "@browserbasehq/stagehand";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { taskAutomationAgent, getLlmInstance } from "@/src/taskAutomationAgent";
+import { getLlmInstance } from "@/src/utils/llm";
 import { AgentState } from "@/src/agentState";
 import { InterventionMode } from "@/src/types";
-import { ToolCall, generateObject } from "ai";
-import { planSubgoals } from "@/src/chiefAgent";
-import {
-  progressEvaluationSchema,
-  getProgressEvaluationPrompt,
-} from "@/src/prompts/progressEvaluation";
-import { toolRegistry } from "@/src/tools/index";
+import { ToolCall } from "ai";
+import { orchestrateAgentTask } from "./agentOrchestrator";
 
 /**
  * ユーザーにy/nの確認を求める関数
@@ -196,7 +191,10 @@ export async function interactiveDebugConsole(
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const userInput = await rl.question("> ");
-    const [command, ...args] = userInput.split(/:(.*)/s);
+    // ユーザー入力の末尾にコロンがある場合などに発生する空の要素を削除する
+    const [command, ...args] = userInput
+      .split(/:(.*)/s)
+      .filter((v) => v.length > 0);
     const argument = args.join(":").trim();
 
     try {
@@ -243,107 +241,25 @@ export async function interactiveDebugConsole(
           );
 
           const llm = getLlmInstance();
-          let subgoals = await planSubgoals(argument, llm);
-          const completedSubgoals: string[] = [];
-          let replanCount = 0;
-          const MAX_REPLAN_ATTEMPTS = 3;
-
-          while (subgoals.length > 0) {
-            const currentSubgoal = subgoals.shift()!;
-            console.log(
-              `\n▶️ サブゴール ${
-                completedSubgoals.length + 1
-              } 実行中: "${currentSubgoal}"`,
+          try {
+            const result = await orchestrateAgentTask(
+              argument,
+              stagehand,
+              state,
+              llm,
+              {
+                approvalCallback: (plan) => requestUserApproval(state, plan),
+              },
             );
-
-            try {
-              const success = await taskAutomationAgent(
-                currentSubgoal,
-                stagehand,
-                state,
-                argument,
-              );
-
-              if (!success) {
-                console.error(
-                  `サブゴール "${currentSubgoal}" の実行に失敗しました。エージェントの処理を中断します。`,
-                );
-                break;
-              }
-
-              completedSubgoals.push(currentSubgoal);
-
-              console.log("🕵️‍♂️ タスク全体の進捗を評価中...");
-              const HISTORY_WINDOW_SIZE = 3;
-              const historySummary = JSON.stringify(
-                state.getHistory().slice(-HISTORY_WINDOW_SIZE),
-              );
-              const currentUrl = state.getActivePage().url();
-              const evalPrompt = getProgressEvaluationPrompt(
-                argument,
-                historySummary,
-                currentUrl,
-              );
-
-              const { object: progress } = await generateObject({
-                model: llm,
-                schema: progressEvaluationSchema,
-                prompt: evalPrompt,
-              });
-
-              if (progress.isTaskCompleted) {
-                console.log(
-                  `✅ タスクは既に完了したと判断しました。理由: ${progress.reasoning}`,
-                );
-                const finishTool = toolRegistry.get("finish");
-                if (finishTool) {
-                  await finishTool.execute(
-                    state,
-                    { answer: progress.reasoning },
-                    llm,
-                    argument,
-                  );
-                }
-                break;
-              }
-            } catch (error: any) {
-              if (error.name === "ReplanNeededError") {
-                if (replanCount >= MAX_REPLAN_ATTEMPTS) {
-                  console.error(
-                    `再計画の試行回数が上限（${MAX_REPLAN_ATTEMPTS}回）に達しました。処理を中断します。`,
-                  );
-                  break;
-                }
-                replanCount++;
-                console.log(
-                  "🚨 再計画が必要です。司令塔エージェントを呼び出します...",
-                );
-                const errorContext = JSON.stringify({
-                  name: error.originalError?.name || error.name,
-                  message: error.originalError?.message || error.message,
-                  failedTool: {
-                    name: error.failedToolCall.toolName,
-                    args: error.failedToolCall.args,
-                  },
-                });
-                subgoals = await planSubgoals(
-                  argument,
-                  llm,
-                  state,
-                  currentSubgoal,
-                  errorContext,
-                );
-                completedSubgoals.push(`${currentSubgoal} (失敗)`);
-                continue;
-              } else {
-                console.error(
-                  `致命的なエラーで処理を中断します: ${error.message}`,
-                );
-                break;
-              }
-            }
+            console.log("\n--- タスク完了 ---");
+            console.log(`成功: ${result.is_success}`);
+            console.log(`最終報告: ${result.reasoning}`);
+            console.log("--------------------");
+          } catch (error: any) {
+            console.error(
+              `\n❌ タスク実行中に致命的なエラーが発生しました: ${error.message}`,
+            );
           }
-          console.log("✅ 全てのサブゴールの処理が完了しました。");
           break;
         }
         case "inspect":

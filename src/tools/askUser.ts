@@ -6,8 +6,7 @@
 
 import { z } from "zod";
 import { AgentState } from "@/src/agentState";
-import * as readline from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
+import { CustomTool } from "@/src/types";
 
 /**
  * `ask_user`ツールの入力スキーマ。
@@ -23,7 +22,7 @@ export const askUserSchema = z.object({
 /**
  * `ask_user`ツールの定義オブジェクト。
  */
-export const askUserTool = {
+export const askUserTool: CustomTool<typeof askUserSchema, string> = {
   name: "ask_user",
   description:
     "自分だけでは解決できない問題に直面した際に、ユーザーに助けを求めるために使用します。曖昧な指示の明確化、ログイン情報やCAPTCHAの解決、または完全に行き詰まった場合などに使用してください。",
@@ -46,10 +45,16 @@ export const askUserTool = {
       throw new Error("ユーザーへの質問はテスト環境では許可されていません。");
     }
 
-    const rl = readline.createInterface({ input, output });
+    // AgentStateに保存されている共有のreadlineインスタンスを取得
+    const rl = state.rl;
+    if (!rl) {
+      // 共有インスタンスが存在しない場合はエラー（通常は発生しないはず）
+      throw new Error("Readline interface is not available. Cannot ask user.");
+    }
+
     console.log(`\n🤔 AIがあなたに質問しています...`);
     const answer = await rl.question(`  ${question}\n  > `);
-    rl.close();
+    // 共有インスタンスなので、ここでは絶対にclose()しない
     return `ユーザーは次のように回答しました: "${answer}"`;
   },
 };

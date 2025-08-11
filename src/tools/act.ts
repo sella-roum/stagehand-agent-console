@@ -6,8 +6,9 @@
 
 import { z } from "zod";
 import { AgentState } from "@/src/agentState";
-import { drawObserveOverlay, clearOverlays } from "@/utils";
+import { drawObserveOverlay, clearOverlays } from "@/src/utils/ui";
 import { ElementNotFoundError } from "@/src/errors";
+import { CustomTool } from "@/src/types";
 
 /**
  * `act`ツールの入力スキーマ。
@@ -16,6 +17,8 @@ import { ElementNotFoundError } from "@/src/errors";
 export const actSchema = z.object({
   instruction: z
     .string()
+    .trim()
+    .min(1, "instructionは1文字以上で指定してください。")
     .describe(
       "実行する操作の自然言語による指示。例: '「ログイン」ボタンをクリック'",
     ),
@@ -24,7 +27,7 @@ export const actSchema = z.object({
 /**
  * `act`ツールの定義オブジェクト。
  */
-export const actTool = {
+export const actTool: CustomTool<typeof actSchema, any> = {
   name: "act",
   description:
     "ページ上で特定の操作（クリック、入力、スクロールなど）を行います。",
@@ -35,7 +38,6 @@ export const actTool = {
    * 操作の信頼性を高めています。
    * @param state - 現在のエージェントの状態。
    * @param args - `actSchema`に基づいた引数。
-   * @param args.instruction
    * @returns 操作の実行結果を示す文字列。
    */
   execute: async (
@@ -50,17 +52,20 @@ export const actTool = {
       const observedForAct = await page.observe(instruction);
 
       if (observedForAct.length > 0) {
-        // 要素が見つかった場合、ユーザーに視覚的なフィードバックを提供
-        console.log("  ...操作対象をハイライト表示します。");
-        await drawObserveOverlay(page, observedForAct);
-        await new Promise((resolve) => setTimeout(resolve, 1500)); // ユーザーが確認するための短い待機
+        try {
+          // 要素が見つかった場合、ユーザーに視覚的なフィードバックを提供
+          console.log("  ...操作対象をハイライト表示します。");
+          await drawObserveOverlay(page, observedForAct);
+          await new Promise((resolve) => setTimeout(resolve, 1500)); // ユーザーが確認するための短い待機
 
-        // 最も確からしい要素に対して操作を実行
-        const result = await page.act(observedForAct[0]);
-        await clearOverlays(page);
-        return `操作 '${instruction}' を実行しました。結果: ${JSON.stringify(
-          result,
-        )}`;
+          // 最も確からしい要素に対して操作を実行
+          const result = await page.act(observedForAct[0]);
+          return `操作 '${instruction}' を実行しました。結果: ${JSON.stringify(
+            result,
+          )}`;
+        } finally {
+          await clearOverlays(page);
+        }
       } else {
         // `observe`で要素が見つからなかった場合、`act`に直接指示を渡してフォールバック
         console.log("  ...observeで見つからなかったため、直接actを試みます。");

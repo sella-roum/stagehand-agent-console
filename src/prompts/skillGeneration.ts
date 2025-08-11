@@ -18,7 +18,7 @@ export const skillGenerationSchema = z.object({
     .string()
     .nullable()
     .describe(
-      "引数を受け取れるTypeScriptの非同期関数としてのスキルコード。`state: AgentState`を第一引数に、`args`オブジェクトを第二引数に取ること。",
+      "引数を受け取れるTypeScriptの非同期関数としてのスキルコード。`export async function execute(state: AgentState, args: any, llm: LanguageModel, initialTask: string): Promise<string>` のシグネチャに厳密に従うこと。",
     ),
   reasoning: z
     .string()
@@ -71,23 +71,30 @@ ${history}
     -   **skill_code:** 以下の「スキルコードの厳格な要件」に完全に従ってコードを生成してください。
 
 # スキルコードの厳格な要件
--   **構造:** すべてのロジックは \`export async function execute(state: AgentState, args: any): Promise<string>\` の中に直接記述してください。**内部で別の関数を定義してはいけません。**
+-   **構造:** すべてのロジックは \`export async function execute(state: AgentState, args: any, llm: LanguageModel, initialTask: string): Promise<string>\` の中に直接記述してください。**内部で別の関数を定義してはいけません。**
 -   **API使用法:**
     -   ブラウザ操作には \`state.getActivePage().act("指示")\` または \`state.getActivePage().act({ action: "指示" })\` を使用します。
     -   情報抽出には \`state.getActivePage().extract("指示")\` または \`state.getActivePage().extract({ instruction: "指示" })\` を使用します。
+    -   \`llm\` と \`initialTask\` は未使用であっても関数シグネチャに必ず含めてください。高度な判断が必要な場合にのみ参照し、基本的なブラウザ操作では \`state\` と \`args\` を主に使用します。
 -   **引数:** スキルが必要とする外部からの入力（例：ユーザー名、URL）は、\`args\` オブジェクトから取得してください (例: \`args.username\`)。
 -   **戻り値:** 必ず操作の成功を示す文字列を \`return\` してください。抽出したデータを返すこともできます。
 
 # スキルコードの良い例（この形式に厳密に従ってください）
 \`\`\`typescript
-// 良い例: ログイン処理
-const page = state.getActivePage();
-await page.goto("https://example.com/login");
-await page.act(\`'ユーザー名'の入力欄に「\${args.username}」と入力して\`);
-await page.act(\`'パスワード'の入力欄に「\${args.password}」と入力して\`);
-await page.act("'ログイン'ボタンをクリックして");
-await page.waitForURL("**/dashboard");
-return "ログインに成功しました。";
+export async function execute(
+  state: AgentState,
+  args: any,
+  llm: LanguageModel,
+  initialTask: string
+): Promise<string> {
+  const page = state.getActivePage();
+  await page.goto("https://example.com/login");
+  await page.act(\`'ユーザー名'の入力欄に「\${args.username}」と入力して\`);
+  await page.act(\`'パスワード'の入力欄に「\${args.password}」と入力して\`);
+  await page.act("'ログイン'ボタンをクリックして");
+  await page.waitForURL("**/dashboard");
+  return "ログインに成功しました。";
+}
 \`\`\`
 
 # 出力形式

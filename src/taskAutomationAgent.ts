@@ -5,41 +5,62 @@
  * Vercel AI SDKを利用して、Google Gemini, Groq, OpenRouterなどのLLMを動的に切り替え可能です。
  */
 
-import { Stagehand } from "@browserbasehq/stagehand";
-import {
-  CoreMessage,
-  LanguageModel,
-  generateText,
-  generateObject,
-  Tool,
-  ToolCall,
-} from "ai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createGroq } from "@ai-sdk/groq";
-import { createOpenAI } from "@ai-sdk/openai";
+import { Stagehand, Page } from "@browserbasehq/stagehand";
+import { CoreMessage, LanguageModel, Tool, ToolCall } from "ai";
 import { z } from "zod";
 
 import { AgentState } from "@/src/agentState";
 import { getBasePrompt } from "@/src/prompts/base";
 import { formatContext } from "@/src/prompts/context";
 import { availableTools, toolRegistry } from "@/src/tools/index";
-import { requestUserApproval } from "@/src/debugConsole";
 import { generateAndSaveSkill } from "@/src/skillManager";
-import { CustomTool } from "@/src/types";
+import { CustomTool, ApprovalCallback } from "@/src/types";
 import { InvalidToolArgumentError } from "@/src/errors";
-import { updateMemoryAfterSubgoal } from "@/utils";
+import {
+  generateTextWithRetry,
+  generateObjectWithRetry,
+} from "@/src/utils/llm";
+
+/**
+ * ログ出力用に機密情報をマスキングするヘルパー関数
+ * @param obj - マスキング対象のオブジェクト
+ * @returns 機密情報がマスクされたオブジェクトのクローン
+ */
+function maskSensitive<T extends Record<string, unknown>>(obj: T): T {
+  const SENSITIVE_KEYS = [
+    "password",
+    "pass",
+    "token",
+    "apiKey",
+    "secret",
+    "authorization",
+  ];
+  const clone: any = Array.isArray(obj)
+    ? [...(obj as any)]
+    : { ...(obj as any) };
+  for (const k of Object.keys(clone)) {
+    if (clone[k] && typeof clone[k] === "object") {
+      clone[k] = maskSensitive(clone[k]);
+    } else if (
+      SENSITIVE_KEYS.some((sk) => k.toLowerCase().includes(sk.toLowerCase()))
+    ) {
+      clone[k] = "***redacted***";
+    }
+  }
+  return clone;
+}
 
 /**
  * 再計画が必要であることを示すためのカスタムエラー
  */
 class ReplanNeededError extends Error {
   public originalError: Error;
-  public failedToolCall: ToolCall<string, any>;
+  public failedToolCall: ToolCall<string, unknown>;
 
   constructor(
     message: string,
     originalError: Error,
-    failedToolCall: ToolCall<string, any>,
+    failedToolCall: ToolCall<string, unknown>,
   ) {
     super(message);
     this.name = "ReplanNeededError";
@@ -53,7 +74,9 @@ class ReplanNeededError extends Error {
  * @param tools - プロジェクト独自のカスタムツールの配列。
  * @returns Vercel AI SDKの`generateText`関数に渡すためのツールオブジェクト。
  */
-function mapCustomToolsToAITools(tools: CustomTool[]): Record<string, Tool> {
+function mapCustomToolsToAITools<TSchema extends z.AnyZodObject>(
+  tools: ReadonlyArray<CustomTool<TSchema, unknown>>,
+): Record<string, Tool> {
   return tools.reduce(
     (acc, tool) => {
       acc[tool.name] = {
@@ -67,63 +90,24 @@ function mapCustomToolsToAITools(tools: CustomTool[]): Record<string, Tool> {
 }
 
 /**
- * 環境変数に基づいて、適切なLLMクライアントのインスタンスを生成して返します。
- * @returns Vercel AI SDKの`LanguageModel`インスタンス。
- * @throws {Error} 必要なAPIキーが.envファイルに設定されていない場合にエラーをスローします。
- */
-export function getLlmInstance(): LanguageModel {
-  const agentMode = process.env.AGENT_MODE || "text";
-  const LLM_PROVIDER = process.env.LLM_PROVIDER || "google";
-
-  if (LLM_PROVIDER === "groq") {
-    const groqApiKey = process.env.GROQ_API_KEY;
-    if (!groqApiKey)
-      throw new Error("GROQ_API_KEYが.envファイルに設定されていません。");
-    const groq = createGroq({ apiKey: groqApiKey });
-    // Groqは現在Vision非対応のため、モードに関わらずテキストモデルを使用
-    return groq(process.env.GROQ_MODEL || "");
-  } else if (LLM_PROVIDER === "openrouter") {
-    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
-    if (!openRouterApiKey)
-      throw new Error("OPENROUTER_API_KEYが.envファイルに設定されていません。");
-    const openrouter = createOpenAI({
-      apiKey: openRouterApiKey,
-      baseURL: "https://openrouter.ai/api/v1",
-      headers: {
-        "HTTP-Referer": "http://localhost:3000",
-        "X-Title": "Stagehand Agent Console",
-      },
-    });
-    const modelName =
-      agentMode === "vision"
-        ? "" // Visionモードの場合、モデル名をOpenAIクライアントに任せる
-        : process.env.OPENROUTER_MODEL || "";
-    return openrouter(modelName);
-  } else {
-    // google
-    const googleApiKey = process.env.GOOGLE_API_KEY;
-    if (!googleApiKey)
-      throw new Error("GOOGLE_API_KEYが.envファイルに設定されていません。");
-    const google = createGoogleGenerativeAI({ apiKey: googleApiKey });
-    const modelName =
-      agentMode === "vision"
-        ? process.env.GEMINI_MODEL || "" // 現状のモデルは、すべて画像認識に対応しているため、このように記述
-        : process.env.GEMINI_MODEL || "";
-    return google(modelName);
-  }
-}
-
-/**
  * 新しいページ（ポップアップなど）が開かれた際のグローバルイベントハンドラを設定します。
  * Visionモデルを使用し、不要なポップアップ（広告、クッキー同意など）を自動で閉じます。
  * @param stagehand - Stagehandのインスタンス。
  * @param llm - Vision分析に使用する言語モデルのインスタンス。
  */
+const POPUP_HANDLER_KEY = Symbol.for("stagehand:popup-handler-installed");
+
 async function setupGlobalEventHandlers(
   stagehand: Stagehand,
   llm: LanguageModel,
 ) {
-  stagehand.page.context().on("page", async (newPage) => {
+  const context = stagehand.page.context() as any;
+  if (context[POPUP_HANDLER_KEY]) {
+    return; // 既にインストール済み
+  }
+  context[POPUP_HANDLER_KEY] = true;
+
+  context.on("page", async (newPage: Page) => {
     try {
       console.log(
         `\n🚨 新しいページ/ポップアップが検出されました: ${await newPage.title()}`,
@@ -146,7 +130,7 @@ async function setupGlobalEventHandlers(
       });
 
       // Visionモデルにスクリーンショットを渡し、ポップアップが不要かどうかを判断させる
-      const { object: analysis } = await generateObject({
+      const { object: analysis } = await generateObjectWithRetry({
         model: llm,
         schema: popupAnalysisSchema,
         messages: [
@@ -157,7 +141,7 @@ async function setupGlobalEventHandlers(
                 type: "text",
                 text: "この新しいページは、メインのタスクを妨げる不要なポップアップ（広告、クッキー同意など）ですか？",
               },
-              { type: "image", image: new URL(screenshotDataUrl) },
+              { type: "image", image: screenshotDataUrl },
             ],
           },
         ],
@@ -185,34 +169,37 @@ async function setupGlobalEventHandlers(
  * @param stagehand - Stagehandのインスタンス。
  * @param state - セッション全体で共有されるエージェントの状態。
  * @param originalTask - ユーザーが最初に与えた高レベルなタスク。
+ * @param llm - 使用する言語モデルのインスタンス。
  * @param options - テスト環境用の設定などを含むオプション。
  * @param options.isTestEnvironment
  * @param options.maxLoops
  * @param options.tools
  * @param options.toolRegistry
+ * @param options.approvalCallback
  * @returns サブゴールの達成に成功した場合はtrue、失敗した場合はfalse。
  */
-export async function taskAutomationAgent(
+export async function taskAutomationAgent<TArgs = unknown>(
   subgoal: string,
   stagehand: Stagehand,
   state: AgentState,
   originalTask: string,
+  llm: LanguageModel,
   options: {
     isTestEnvironment?: boolean;
     maxLoops?: number;
-    tools?: CustomTool[];
-    toolRegistry?: Map<string, CustomTool>;
-  } = {},
+    tools?: CustomTool<z.AnyZodObject, TArgs>[];
+    toolRegistry?: Map<string, CustomTool<z.AnyZodObject, TArgs>>;
+    approvalCallback: ApprovalCallback<TArgs>;
+  },
 ): Promise<boolean> {
   const {
     isTestEnvironment = false,
     maxLoops = 15,
     tools = availableTools,
     toolRegistry: customToolRegistry = toolRegistry,
+    approvalCallback,
   } = options;
 
-  const llm = getLlmInstance();
-  const historyStartIndex = state.getHistory().length;
   let reflectionCount = 0;
   const maxReflections = 2;
 
@@ -245,7 +232,7 @@ export async function taskAutomationAgent(
     const contextPrompt = await formatContext(state, summary);
 
     // 2. 思考: LLMに次の行動（ツール呼び出し）を決定させる
-    const { toolCalls, text, finishReason } = await generateText({
+    const { toolCalls, text, finishReason } = await generateTextWithRetry({
       model: llm,
       messages: [...messages, { role: "user", content: contextPrompt }],
       tools: mapCustomToolsToAITools(tools),
@@ -255,15 +242,6 @@ export async function taskAutomationAgent(
     if (finishReason === "stop" && text) {
       console.log(`\n🎉 サブゴール完了！ AIの所感: ${text}`);
       state.addCompletedSubgoal(subgoal);
-
-      await updateMemoryAfterSubgoal(
-        state,
-        llm,
-        originalTask,
-        subgoal,
-        historyStartIndex,
-        500,
-      );
 
       if (!isTestEnvironment) {
         await generateAndSaveSkill(state.getHistory(), llm);
@@ -279,14 +257,37 @@ export async function taskAutomationAgent(
     }
 
     // 3. 承認: ユーザーに計画の実行許可を求める（介入モードによる）
-    const approvedPlan = isTestEnvironment
-      ? toolCalls
-      : await requestUserApproval(state, toolCalls);
-    if (!approvedPlan) {
+    let approvedPlan: ToolCall<string, TArgs>[] | null = null;
+    try {
+      approvedPlan = await approvalCallback(
+        toolCalls as ToolCall<string, TArgs>[],
+      );
+    } catch (error: any) {
+      const planSummary =
+        toolCalls
+          ?.map((tc) => tc.toolName)
+          .slice(0, 3)
+          .join(", ") || "N/A";
+      console.error(
+        `承認プロセス中にエラーが発生しました: ${error.message}\n失敗した計画の概要 (先頭3件): ${planSummary}`,
+      );
+      // 再計画へ
+      throw new ReplanNeededError(
+        "承認プロセスでエラーが発生しました。",
+        error,
+        (toolCalls && toolCalls[0]) as ToolCall<string, unknown>,
+      );
+    }
+    if (!approvedPlan || approvedPlan.length === 0) {
       console.log(
         "ユーザーが計画を拒否しました。サブゴールの実行を中断します。",
       );
-      return false;
+      // 再計画へ
+      throw new ReplanNeededError(
+        "ユーザーが計画を拒否しました。",
+        new Error("Plan rejected by user"),
+        (toolCalls && toolCalls[0]) as ToolCall<string, unknown>,
+      );
     }
 
     // 4. 実行: 承認されたツールを実行し、結果を収集
@@ -300,73 +301,72 @@ export async function taskAutomationAgent(
       })),
     });
 
-    const toolResults = await Promise.all(
-      approvedPlan.map(async (toolCall) => {
-        const tool = customToolRegistry.get(toolCall.toolName);
-        if (!tool) {
-          const errorMsg = `不明なツールです: ${toolCall.toolName}`;
-          console.error(`  ❌ エラー: ${errorMsg}`);
-          state.addHistory({ toolCall, error: errorMsg });
-          return {
-            toolCallId: toolCall.toolCallId,
-            toolName: toolCall.toolName,
-            result: `エラー: ${errorMsg}`,
-          };
-        }
-        try {
-          const { toolName, args } = toolCall;
-
-          if (tool.precondition) {
-            console.log(`  ...事前条件をチェック中: ${toolName}`);
-            const check = await tool.precondition(state, args);
-            if (!check.success) {
-              throw new InvalidToolArgumentError(
-                `事前条件チェック失敗: ${check.message}`,
-                toolName,
-                args,
-              );
-            }
-          }
-
-          console.log(`  ⚡️ 実行中: ${toolName}(${JSON.stringify(args)})`);
-
-          const result = await tool.execute(state, args, llm, originalTask);
-
-          const resultLog =
-            typeof result === "object"
-              ? JSON.stringify(result, null, 2)
-              : result;
-          console.log(`  ✅ 成功: ${resultLog.substring(0, 200)}...`);
-
-          state.addHistory({ toolCall, result });
-          return {
-            toolCallId: toolCall.toolCallId,
-            toolName: toolCall.toolName,
-            result,
-          };
-        } catch (error: any) {
-          reflectionCount++;
-          if (reflectionCount > maxReflections) {
-            console.warn(
-              `⚠️ 自己修復の試行が${maxReflections}回を超えました。司令塔に再計画を要求します。`,
-            );
-            throw new ReplanNeededError(
-              "自己修復の制限に達しました。",
-              error,
-              toolCall,
+    const toolResults: Array<{
+      toolCallId: string;
+      toolName: string;
+      result: unknown;
+    }> = [];
+    for (const toolCall of approvedPlan) {
+      const tool = customToolRegistry.get(toolCall.toolName);
+      if (!tool) {
+        const errorMsg = `不明なツールです: ${toolCall.toolName}`;
+        console.error(`  ❌ エラー: ${errorMsg}`);
+        state.addHistory({ toolCall, error: errorMsg });
+        toolResults.push({
+          toolCallId: toolCall.toolCallId,
+          toolName: toolCall.toolName,
+          result: `エラー: ${errorMsg}`,
+        });
+        continue;
+      }
+      try {
+        const { toolName, args } = toolCall;
+        // 事前に引数をスキーマで検証して型付け
+        const parsedArgs = tool.schema.parse(args);
+        if (tool.precondition) {
+          console.log(`  ...事前条件をチェック中: ${toolName}`);
+          const check = await tool.precondition(state, parsedArgs);
+          if (!check.success) {
+            throw new InvalidToolArgumentError(
+              `事前条件チェック失敗: ${check.message}`,
+              toolName,
+              parsedArgs,
             );
           }
-
-          console.error(`  ❌ エラー (${toolCall.toolName}): ${error.message}`);
-          state.addHistory({ toolCall, error: error.message });
-          return {
-            toolCallId: toolCall.toolCallId,
-            toolName: toolCall.toolName,
-            result: `エラー: ${error.message}`,
-          };
         }
-      }),
-    );
+        const safeArgs = maskSensitive(parsedArgs as Record<string, unknown>);
+        console.log(`  ⚡️ 実行中: ${toolName}(${JSON.stringify(safeArgs)})`);
+        const result = await tool.execute(state, parsedArgs, llm, originalTask);
+        const resultLog =
+          typeof result === "object" ? JSON.stringify(result, null, 2) : result;
+        console.log(`  ✅ 成功: ${String(resultLog).substring(0, 200)}...`);
+        state.addHistory({ toolCall, result });
+        toolResults.push({
+          toolCallId: toolCall.toolCallId,
+          toolName: toolCall.toolName,
+          result,
+        });
+      } catch (error: any) {
+        reflectionCount++;
+        if (reflectionCount > maxReflections) {
+          console.warn(
+            `⚠️ 自己修復の試行が${maxReflections}回を超えました。司令塔に再計画を要求します。`,
+          );
+          throw new ReplanNeededError(
+            "自己修復の制限に達しました。",
+            error,
+            toolCall,
+          );
+        }
+        console.error(`  ❌ エラー (${toolCall.toolName}): ${error.message}`);
+        state.addHistory({ toolCall, error: error.message });
+        toolResults.push({
+          toolCallId: toolCall.toolCallId,
+          toolName: toolCall.toolName,
+          result: `エラー: ${error.message}`,
+        });
+      }
+    }
 
     // 5. 検証: finishツールが呼ばれたか確認
     for (const toolResult of toolResults) {
@@ -391,7 +391,18 @@ export async function taskAutomationAgent(
     });
 
     await state.updatePages();
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // レートリミットを回避するために、各思考ループの間に短い待機時間を設ける
+    const LLM_PROVIDER = process.env.LLM_PROVIDER || "google";
+    const defaultWaitMs = LLM_PROVIDER === "groq" ? 3000 : 1000;
+    const waitMs = parseInt(
+      process.env.LOOP_WAIT_MS || String(defaultWaitMs),
+      10,
+    );
+    console.log(
+      `  ...レートリミット対策のため ${waitMs / 1000}秒待機します...`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
 
   console.warn(

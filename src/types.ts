@@ -43,6 +43,15 @@ export type AgentExecutionResult = {
 };
 
 /**
+ * ユーザー承認コールバックの型定義。
+ * @param plan - AIが生成した実行計画
+ * @returns 承認された場合は計画を、拒否された場合はnullを返すPromise
+ */
+export type ApprovalCallback<TArgs = unknown> = (
+  plan: ToolCall<string, TArgs>[],
+) => Promise<ToolCall<string, TArgs>[] | null>;
+
+/**
  * 事前条件チェックの結果を表す型。
  * 成功した場合は { success: true }、失敗した場合は理由を含むメッセージを返す。
  */
@@ -50,19 +59,25 @@ export type PreconditionResult =
   | { success: true }
   | { success: false; message: string };
 
-export type CustomTool = {
+export type CustomTool<
+  T extends z.ZodObject<any, any, any, any, any>,
+  R = any,
+> = {
   name: string;
   description: string;
-  schema: z.ZodObject<any, any, any, any, any>;
+  schema: T;
   /**
    * ツール実行前に、そのツールが現在の状況で実行可能かをチェックするオプショナルな関数。
    * 失敗した場合は、その理由を含むメッセージを返す。
    */
-  precondition?: (state: AgentState, args: any) => Promise<PreconditionResult>;
+  precondition?: (
+    state: AgentState,
+    args: z.infer<T>,
+  ) => Promise<PreconditionResult> | PreconditionResult;
   execute: (
     state: AgentState,
-    args: any,
+    args: z.infer<T>,
     llm: LanguageModel,
     initialTask: string,
-  ) => Promise<any>;
+  ) => Promise<R>;
 };

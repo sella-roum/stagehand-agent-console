@@ -6,6 +6,7 @@
 
 import { z } from "zod";
 import { AgentState } from "@/src/agentState";
+import { CustomTool } from "@/src/types";
 
 /**
  * `extract`ツールの入力スキーマ。
@@ -13,7 +14,7 @@ import { AgentState } from "@/src/agentState";
 export const extractSchema = z.object({
   instruction: z
     .string()
-    .nullable()
+    .optional()
     .describe(
       "抽出したい内容の指示。例: '記事のタイトル'。引数がない場合はページ全体のテキストを抽出します。",
     ),
@@ -22,7 +23,7 @@ export const extractSchema = z.object({
 /**
  * `extract`ツールの定義オブジェクト。
  */
-export const extractTool = {
+export const extractTool: CustomTool<typeof extractSchema> = {
   name: "extract",
   description: "現在のページから情報を抽出します。",
   schema: extractSchema,
