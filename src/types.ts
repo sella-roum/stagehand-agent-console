@@ -10,8 +10,24 @@ export type PlanStep = {
   argument: string | null;
 };
 
+/**
+ * 司令塔エージェントによって生成される単一のサブゴールを表す型。
+ * 実行すべき内容と、その成功を判断するための基準が含まれる。
+ */
+export type Subgoal = {
+  description: string;
+  successCriteria: string;
+};
+
+/**
+ * タスク全体の計画を表す型。Subgoalの配列。
+ */
+export type Plan = Subgoal[];
+
 export type ExecutionRecord = {
   toolCall: ToolCall<string, any>;
+  subgoalDescription?: string;
+  successCriteria?: string;
   result?: any;
   error?: string;
   userFeedback?: string;

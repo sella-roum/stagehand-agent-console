@@ -8,6 +8,7 @@ import {
   memoryUpdateSchema,
 } from "@/src/prompts/memory";
 import { generateObjectWithRetry } from "./llm";
+import { Subgoal } from "@/src/types";
 
 /**
  * サブゴール完了後にエージェントの記憶を更新するための共通関数。
@@ -22,7 +23,7 @@ export async function updateMemoryAfterSubgoal(
   state: AgentState,
   llm: LanguageModel,
   originalTask: string,
-  subgoal: string,
+  subgoal: Subgoal,
   historyStartIndex: number,
   resultCharLimit: number = 200,
 ): Promise<void> {
@@ -51,12 +52,16 @@ export async function updateMemoryAfterSubgoal(
   try {
     const { object: memoryUpdate } = await generateObjectWithRetry({
       model: llm,
-      prompt: getMemoryUpdatePrompt(originalTask, subgoal, subgoalHistoryJson),
+      prompt: getMemoryUpdatePrompt(
+        originalTask,
+        subgoal.description,
+        subgoalHistoryJson,
+      ),
       schema: memoryUpdateSchema,
     });
 
     state.addToWorkingMemory(
-      `直前のサブゴール「${subgoal}」の要約: ${memoryUpdate.subgoal_summary}`,
+      `直前のサブゴール「${subgoal.description}」の要約: ${memoryUpdate.subgoal_summary}`,
     );
 
     if (memoryUpdate.long_term_memory_facts.length > 0) {

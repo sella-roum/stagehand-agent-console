@@ -3,6 +3,31 @@
  */
 import { ObserveResult, Page } from "@browserbasehq/stagehand";
 import boxen from "boxen";
+import chalk from "chalk";
+
+/**
+ * 専門エージェントの役割に応じたログプレフィックスとスタイルを定義します。
+ */
+const agentStyles = {
+  Analyst: { prefix: "🤔 [Analyst]", color: chalk.cyan },
+  Executor: { prefix: "⚡️ [Executor]", color: chalk.yellow },
+  QA: { prefix: "✅ [QA]", color: chalk.green },
+  "QA-Fail": { prefix: "❌ [QA]", color: chalk.red },
+  Chief: { prefix: "👑 [Chief]", color: chalk.magenta },
+  Orchestrator: { prefix: "🎼 [Orchestrator]", color: chalk.blue },
+};
+
+export type AgentRole = keyof typeof agentStyles;
+
+/**
+ * 役割に応じたスタイルでコンソールにログを出力します。
+ * @param role - ログを出力するエージェントの役割。
+ * @param message - 表示するメッセージ。
+ */
+export function logAgentMessage(role: AgentRole, message: string) {
+  const style = agentStyles[role];
+  console.log(style.color(`${style.prefix} ${message}`));
+}
 
 /**
  * コンソールに目立つ枠線付きのメッセージを表示します。

@@ -6,11 +6,12 @@
 import { Stagehand } from "@browserbasehq/stagehand";
 import { AgentState } from "@/src/agentState";
 import { planSubgoals } from "@/src/chiefAgent";
-import { taskAutomationAgent } from "@/src/taskAutomationAgent";
+import { subgoalCoordinator } from "@/src/subgoalCoordinator";
 import {
   AgentExecutionResult,
   CustomTool,
   ApprovalCallback,
+  Plan,
 } from "@/src/types";
 import { LanguageModel } from "ai";
 import { generateObjectWithRetry } from "@/src/utils/llm";
@@ -60,7 +61,7 @@ export async function orchestrateAgentTask<TArgs = unknown>(
 
   // 1. 計画
   console.log(`👑 司令塔エージェントがタスク計画を開始: "${task}"`);
-  let subgoals = await planSubgoals(task, llm);
+  let subgoals: Plan = await planSubgoals(task, llm);
   if (subgoals.length > maxSubgoals) {
     console.warn(
       `計画されたサブゴールが多すぎます: ${subgoals.length} > ${maxSubgoals}。先頭${maxSubgoals}件に制限します。`,
@@ -77,13 +78,15 @@ export async function orchestrateAgentTask<TArgs = unknown>(
     if (!subgoal) continue;
 
     console.log(
-      `\n▶️ サブゴール ${completedSubgoals.length + 1} 実行中: "${subgoal}"`,
+      `\n▶️ サブゴール ${completedSubgoals.length + 1} 実行中: "${
+        subgoal.description
+      }"`,
     );
     const historyStartIndex = state.getHistory().length;
 
     try {
       // 2a. サブゴール実行
-      const success = await taskAutomationAgent(
+      const success = await subgoalCoordinator(
         subgoal,
         stagehand,
         state,
@@ -97,13 +100,14 @@ export async function orchestrateAgentTask<TArgs = unknown>(
       );
 
       if (!success) {
-        throw new Error(`サブゴール "${subgoal}" の実行に失敗しました。`);
+        throw new Error(
+          `サブゴール "${subgoal.description}" の実行に失敗しました。`,
+        );
       }
-      completedSubgoals.push(subgoal);
-      // 成功後は再計画リトライ回数をリセット
+      completedSubgoals.push(subgoal.description);
       replanCount = 0;
 
-      // 2b. 記憶の更新（失敗しても全体は継続）
+      // 2b. 記憶の更新
       try {
         await updateMemoryAfterSubgoal(
           state,
@@ -170,7 +174,7 @@ export async function orchestrateAgentTask<TArgs = unknown>(
             : undefined,
         });
         subgoals = await planSubgoals(task, llm, state, subgoal, errorContext);
-        completedSubgoals.push(`${subgoal} (失敗)`);
+        completedSubgoals.push(`${subgoal.description} (失敗)`);
         if (subgoals.length === 0) {
           throw new Error("再計画の結果、実行可能なサブゴールがありません。");
         }
