@@ -129,9 +129,11 @@ export async function orchestrateAgentTask<TArgs = unknown>(
 
         if (
           newMilestones.length === 1 &&
-          (newMilestones[0].description.toLowerCase().includes("タスクを中止") ||
-           newMilestones[0].description.toLowerCase().includes("達成不可能") ||
-           /^finish:/i.test(newMilestones[0].description))
+          (newMilestones[0].description
+            .toLowerCase()
+            .includes("タスクを中止") ||
+            newMilestones[0].description.toLowerCase().includes("達成不可能") ||
+            /^finish:/i.test(newMilestones[0].description))
         ) {
           const reasoning = newMilestones[0].completionCriteria;
           console.log(

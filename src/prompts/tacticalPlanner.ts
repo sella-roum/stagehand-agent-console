@@ -40,7 +40,10 @@ export const tacticalPlanSchema = z
  * @param context - 現在のページ状況や履歴を含むコンテキスト情報。
  * @returns LLMに渡すためのプロンプト文字列。
  */
-export function getTacticalPlannerPrompt(milestoneDescription: string, context: string): string {
+export function getTacticalPlannerPrompt(
+  milestoneDescription: string,
+  context: string,
+): string {
   const safeContext = context.replace(/`/g, "\\`");
   const safeMilestone = milestoneDescription.replace(/`/g, "\\`");
   return `

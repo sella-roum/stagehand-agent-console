@@ -115,10 +115,8 @@ cp .env.example .env
 
 # --- Google Gemini Settings ---
 GOOGLE_API_KEY="YOUR_GOOGLE_API_KEY"
-# Chief AgentやVision Analystなどの高性能な思考に使用されるデフォルトモデル
-GOOGLE_DEFAULT_MODEL="gemini-1.5-pro-latest"
-# Tactical PlannerやDOM Analystなどの高速な思考に使用されるモデル
-GOOGLE_FAST_MODEL="gemini-1.5-flash-latest"
+GOOGLE_DEFAULT_MODEL="gemini-2.5-pro"
+GOOGLE_FAST_MODEL="gemini-2.5-flash"
 
 # --- Groq Cloud Settings ---
 GROQ_API_KEY="YOUR_GROQ_API_KEY"
@@ -128,12 +126,12 @@ GROQ_FAST_MODEL="llama3-8b-8192"
 # --- OpenRouter Settings ---
 OPENROUTER_API_KEY="YOUR_OPENROUTER_API_KEY"
 OPENROUTER_DEFAULT_MODEL="anthropic/claude-3.5-sonnet"
-OPENROUTER_FAST_MODEL="google/gemini-flash-1.5"
+OPENROUTER_FAST_MODEL="google/gemini-flash-2.5"
 
-# --- Cerebras Settings ---
+# --- Cerebras Settings (新規追加) ---
 CEREBRAS_API_KEY="YOUR_CEREBRAS_API_KEY"
-CEREBRAS_DEFAULT_MODEL="btlm-3b-8k-chat"
-CEREBRAS_FAST_MODEL="btlm-3b-8k-chat"
+CEREBRAS_DEFAULT_MODEL="gpt-oss-120b"
+CEREBRAS_FAST_MODEL="llama-4-maverick-17b-128e-instruct"
 
 # --- Provider Selection ---
 # 'google', 'groq', 'openrouter', 'cerebras' を指定

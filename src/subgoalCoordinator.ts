@@ -10,7 +10,7 @@ import { z } from "zod";
 
 import { AgentState } from "@/src/agentState";
 import { formatContext } from "@/src/prompts/context";
-import { toolRegistry } from "@/src/tools/index";
+import { toolRegistry as globalToolRegistry } from "@/src/tools/index";
 import {
   CustomTool,
   ApprovalCallback,
@@ -21,20 +21,24 @@ import {
   ReplanNeededError,
   AgentExecutionResult,
 } from "@/src/types";
-import {
-  generateObjectWithRetry,
-} from "@/src/utils/llm";
+import { generateObjectWithRetry } from "@/src/utils/llm";
 import { getQAPrompt, qaSchema } from "@/src/prompts/qa";
 import { logAgentMessage } from "@/src/utils/ui";
 import { getReflectionPrompt, formatReflection } from "./prompts/reflection";
-import { getTacticalPlannerPrompt, tacticalPlanSchema } from "./prompts/tacticalPlanner";
+import {
+  getTacticalPlannerPrompt,
+  tacticalPlanSchema,
+} from "./prompts/tacticalPlanner";
 import { FailureTracker } from "./failureTracker";
 import { DomAnalyst } from "./analysts/domAnalyst";
 import { HistoryAnalyst } from "./analysts/historyAnalyst";
 import { VisionAnalyst } from "./analysts/visionAnalyst";
 import { Proposal } from "./analysts/baseAnalyst";
 import { updateMemoryAfterSubgoal } from "./utils/memory";
-import { getProgressEvaluationPrompt, progressEvaluationSchema } from "./prompts/progressEvaluation";
+import {
+  getProgressEvaluationPrompt,
+  progressEvaluationSchema,
+} from "./prompts/progressEvaluation";
 
 /**
  * ログ出力用に機密情報をマスキングするヘルパー関数
@@ -254,6 +258,7 @@ async function runAnalystSwarm(
  * @param options - 実行オプション。
  * @param options.maxLoopsPerSubgoal - ループの最大試行回数。
  * @param options.approvalCallback - ユーザー承認のためのコールバック関数。
+ * @param options.tools - このループで使用するツールのリスト。
  * @returns サブゴールが成功した場合はtrue、失敗した場合はfalse。
  */
 async function executeSubgoalLoop<TArgs = unknown>(
@@ -265,9 +270,19 @@ async function executeSubgoalLoop<TArgs = unknown>(
   options: {
     maxLoopsPerSubgoal?: number;
     approvalCallback: ApprovalCallback<TArgs>;
+    tools?: CustomTool<z.AnyZodObject, TArgs>[];
   },
 ): Promise<boolean> {
-  const { maxLoopsPerSubgoal: maxLoops = 15, approvalCallback } = options;
+  const {
+    maxLoopsPerSubgoal: maxLoops = 15,
+    approvalCallback,
+    tools = [...globalToolRegistry.values()],
+  } = options;
+
+  const localToolRegistry = new Map<string, CustomTool<z.AnyZodObject, any>>(
+    tools.map((t) => [t.name, t]),
+  );
+
   const failureTracker = new FailureTracker();
   let lastError: Error | undefined;
 
@@ -283,7 +298,10 @@ async function executeSubgoalLoop<TArgs = unknown>(
       throw new ReplanNeededError(
         "Analyst swarm failed to produce a plan.",
         e instanceof Error ? e : new Error(String(e)),
-        { toolName: "analyst-swarm", args: { subgoal: subgoal.description } } as ToolCall<string, any>,
+        {
+          toolName: "analyst-swarm",
+          args: { subgoal: subgoal.description },
+        } as ToolCall<string, any>,
       );
     }
 
@@ -300,7 +318,7 @@ async function executeSubgoalLoop<TArgs = unknown>(
     const approvedToolCall = approvedPlan[0];
 
     try {
-      const tool = toolRegistry.get(approvedToolCall.toolName);
+      const tool = localToolRegistry.get(approvedToolCall.toolName);
       if (!tool)
         throw new Error(`不明なツールです: ${approvedToolCall.toolName}`);
 
@@ -326,10 +344,7 @@ async function executeSubgoalLoop<TArgs = unknown>(
       } else {
         state.addQAFailureFeedback(qaResult.reasoning);
         // QA失敗も失敗とみなし、failureTrackerに記録する
-        await failureTracker.recordFailure(
-          approvedToolCall,
-          state,
-        );
+        await failureTracker.recordFailure(approvedToolCall, state);
       }
     } catch (error: any) {
       lastError = error;
@@ -421,6 +436,7 @@ export async function subgoalCoordinator<TArgs = unknown>(
       {
         maxLoopsPerSubgoal: options.maxLoopsPerSubgoal,
         approvalCallback: options.approvalCallback,
+        tools: options.tools,
       },
     );
     if (!subgoalSuccess) {
@@ -511,7 +527,20 @@ async function checkTaskProgress(
   llm: LanguageModel,
 ): Promise<AgentExecutionResult> {
   console.log("🕵️‍♂️ タスク全体の進捗を評価中...");
-  const historySummary = JSON.stringify(state.getHistory().slice(-3));
+  const recentHistory = state
+    .getHistory()
+    .slice(-3)
+    .map((h) => {
+      const maskedArgs =
+        h.toolCall?.args && typeof h.toolCall.args === "object"
+          ? maskSensitive(h.toolCall.args as Record<string, unknown>)
+          : h.toolCall?.args;
+      return {
+        ...h,
+        toolCall: h.toolCall ? { ...h.toolCall, args: maskedArgs } : undefined,
+      };
+    });
+  const historySummary = JSON.stringify(recentHistory);
   let currentUrl = "about:blank";
   try {
     currentUrl = state.getActivePage().url();
