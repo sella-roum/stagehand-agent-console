@@ -59,11 +59,15 @@ export function getLlmInstance(
       const openrouter = createOpenAI({
         apiKey: apiKey,
         baseURL: "https://openrouter.ai/api/v1",
-        headers: {
-          "HTTP-Referer":
-            process.env.OPENROUTER_HTTP_REFERER || "http://localhost:3000",
-          "X-Title":
-            process.env.OPENROUTER_X_TITLE || "Stagehand Agent Console",
+        fetch: async (url, options) => {
+          const headers = {
+            ...options?.headers,
+            "HTTP-Referer":
+              process.env.OPENROUTER_HTTP_REFERER || "http://localhost:3000",
+            "X-Title":
+              process.env.OPENROUTER_X_TITLE || "Stagehand Agent Console",
+          };
+          return fetch(url, { ...options, headers });
         },
       });
       const modelName = getModelName("openrouter");

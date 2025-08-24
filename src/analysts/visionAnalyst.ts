@@ -1,6 +1,6 @@
 import { LanguageModel, ToolCall } from "ai";
 import { AgentState } from "@/src/agentState";
-import { BaseAnalyst, Proposal } from "./baseAnalyst";
+import { BaseAnalyst, Proposal, AnalystContext } from "./baseAnalyst";
 import { generateObjectWithRetry } from "@/src/utils/llm";
 import { z } from "zod";
 import { randomUUID } from "crypto";
@@ -38,16 +38,19 @@ export class VisionAnalyst implements BaseAnalyst {
   /**
    * 現在のスクリーンショットを分析し、次のアクションを提案します。
    * @param state - 現在のエージェントの状態。
+   * @param context - 実行コンテキスト。
    * @returns 行動提案 (Proposal) のPromise。
    */
-  async proposeAction(state: AgentState): Promise<Proposal<any>> {
+  async proposeAction(
+    state: AgentState,
+    context: AnalystContext,
+  ): Promise<Proposal<any>> {
     const page = state.getActivePage();
     const screenshotBuffer = await page.screenshot();
     const screenshotDataUrl = `data:image/png;base64,${screenshotBuffer.toString("base64")}`;
 
     const currentSubgoal =
-      state.getHistory().slice(-1)[0]?.subgoalDescription ||
-      "現在のタスクを達成する";
+      context.subgoal.description || "現在のタスクを達成する";
 
     const prompt = `
 あなたはスクリーンショットを分析して次の行動を決定する視覚AIエキスパートです。

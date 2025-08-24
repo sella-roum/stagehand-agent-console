@@ -1,6 +1,6 @@
 import { LanguageModel, Tool } from "ai";
 import { AgentState } from "@/src/agentState";
-import { BaseAnalyst, Proposal } from "./baseAnalyst";
+import { BaseAnalyst, Proposal, AnalystContext } from "./baseAnalyst";
 import { getAnalystPrompt } from "@/src/prompts/analyst";
 import { formatContext } from "@/src/prompts/context";
 import { generateTextWithRetry } from "@/src/utils/llm";
@@ -45,9 +45,13 @@ export class DomAnalyst implements BaseAnalyst {
   /**
    * 現在のDOM状態とタスクに基づき、次のアクションを提案します。
    * @param state - 現在のエージェントの状態。
+   * @param context - 実行コンテキスト。
    * @returns 行動提案 (Proposal) のPromise。
    */
-  async proposeAction(state: AgentState): Promise<Proposal<any>> {
+  async proposeAction(
+    state: AgentState,
+    context: AnalystContext,
+  ): Promise<Proposal<any>> {
     const summary = await state
       .getActivePage()
       .extract()
@@ -56,17 +60,10 @@ export class DomAnalyst implements BaseAnalyst {
         console.warn(`ページ情報の抽出に失敗: ${error.message}`);
         return "ページ情報なし";
       });
-    const context = await formatContext(state, summary);
-    const currentSubgoal = state.getHistory().slice(-1)[0]?.subgoalDescription;
+    const formattedContext = await formatContext(state, summary);
+    const currentSubgoal = context.subgoal;
 
-    if (!currentSubgoal) {
-      throw new Error("現在のサブゴールが不明です。");
-    }
-
-    const prompt = getAnalystPrompt(
-      { description: currentSubgoal, successCriteria: "" },
-      context,
-    );
+    const prompt = getAnalystPrompt(currentSubgoal, formattedContext);
 
     const { toolCalls, text } = await generateTextWithRetry({
       model: this.llm,

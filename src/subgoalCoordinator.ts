@@ -33,7 +33,7 @@ import { FailureTracker } from "./failureTracker";
 import { DomAnalyst } from "./analysts/domAnalyst";
 import { HistoryAnalyst } from "./analysts/historyAnalyst";
 import { VisionAnalyst } from "./analysts/visionAnalyst";
-import { Proposal } from "./analysts/baseAnalyst";
+import { Proposal, AnalystContext } from "./analysts/baseAnalyst";
 import { updateMemoryAfterSubgoal } from "./utils/memory";
 import {
   getProgressEvaluationPrompt,
@@ -196,14 +196,13 @@ async function runAnalystSwarm(
   llms: LlmInstances,
   lastError?: Error,
 ): Promise<ToolCall<string, any>> {
+  const context: AnalystContext = { subgoal, lastError };
   const promises: Promise<Proposal<any>>[] = [];
 
-  promises.push(new DomAnalyst(llms.fast).proposeAction(state));
+  promises.push(new DomAnalyst(llms.fast).proposeAction(state, context));
 
   if (lastError) {
-    promises.push(
-      new HistoryAnalyst(llms.fast).proposeAction(state, lastError),
-    );
+    promises.push(new HistoryAnalyst(llms.fast).proposeAction(state, context));
   }
 
   const results = await Promise.allSettled(promises);
@@ -223,7 +222,7 @@ async function runAnalystSwarm(
     try {
       const visionProposal = await new VisionAnalyst(
         llms.highPerformance,
-      ).proposeAction(state);
+      ).proposeAction(state, context);
       proposals.push(visionProposal);
     } catch (error) {
       console.warn(`Vision分析に失敗: ${error}`);

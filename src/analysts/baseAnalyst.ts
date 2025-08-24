@@ -1,5 +1,14 @@
 import { ToolCall } from "ai";
 import { AgentState } from "@/src/agentState";
+import { Subgoal } from "@/src/types";
+
+/**
+ * Analystが必要とする可能性のあるすべてのコンテキスト情報をまとめた型。
+ */
+export type AnalystContext = {
+  subgoal: Subgoal;
+  lastError?: Error;
+};
 
 /**
  * Analystが生成する単一の行動提案。
@@ -24,8 +33,11 @@ export interface BaseAnalyst<TArgs = unknown> {
   /**
    * 現在の状況に基づいて、次の最適なアクションを提案する。
    * @param state - 現在のエージェントの状態。
-   * @param lastError - (オプション) 直前のステップで発生したエラー。
+   * @param context - サブゴールや直前のエラーを含む実行コンテキスト。
    * @returns 行動提案 (Proposal) のPromise。
    */
-  proposeAction(state: AgentState, lastError?: Error): Promise<Proposal<TArgs>>;
+  proposeAction(
+    state: AgentState,
+    context: AnalystContext,
+  ): Promise<Proposal<TArgs>>;
 }

@@ -1,6 +1,6 @@
 import { LanguageModel, ToolCall } from "ai";
 import { AgentState } from "@/src/agentState";
-import { BaseAnalyst, Proposal } from "./baseAnalyst";
+import { BaseAnalyst, Proposal, AnalystContext } from "./baseAnalyst";
 import { generateObjectWithRetry } from "@/src/utils/llm";
 import { z } from "zod";
 
@@ -31,13 +31,20 @@ export class HistoryAnalyst implements BaseAnalyst {
   /**
    * 過去の失敗履歴と直近のエラーに基づき、次のアクションを提案します。
    * @param state - 現在のエージェントの状態。
-   * @param lastError - 直前のステップで発生したエラー。
+   * @param context - 実行コンテキスト。
    * @returns 行動提案 (Proposal) のPromise。
    */
   async proposeAction(
     state: AgentState,
-    lastError?: Error,
+    context: AnalystContext,
   ): Promise<Proposal<any>> {
+    const lastError = context.lastError;
+    if (!lastError) {
+      throw new Error(
+        "HistoryAnalystはエラーコンテキストなしでは呼び出せません。",
+      );
+    }
+
     const history = state.getHistory();
     // 最低限の安全対策: 大きいフィールドをトリミングし、代表的な秘匿キーをマスク
     const redact = (v: any): any => {
