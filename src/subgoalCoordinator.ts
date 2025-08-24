@@ -21,24 +21,20 @@ import {
   ReplanNeededError,
   AgentExecutionResult,
 } from "@/src/types";
-import { generateObjectWithRetry } from "@/src/utils/llm";
+import {
+  generateObjectWithRetry,
+} from "@/src/utils/llm";
 import { getQAPrompt, qaSchema } from "@/src/prompts/qa";
 import { logAgentMessage } from "@/src/utils/ui";
 import { getReflectionPrompt, formatReflection } from "./prompts/reflection";
-import {
-  getTacticalPlannerPrompt,
-  tacticalPlanSchema,
-} from "./prompts/tacticalPlanner";
+import { getTacticalPlannerPrompt, tacticalPlanSchema } from "./prompts/tacticalPlanner";
 import { FailureTracker } from "./failureTracker";
 import { DomAnalyst } from "./analysts/domAnalyst";
 import { HistoryAnalyst } from "./analysts/historyAnalyst";
 import { VisionAnalyst } from "./analysts/visionAnalyst";
 import { Proposal } from "./analysts/baseAnalyst";
 import { updateMemoryAfterSubgoal } from "./utils/memory";
-import {
-  getProgressEvaluationPrompt,
-  progressEvaluationSchema,
-} from "./prompts/progressEvaluation";
+import { getProgressEvaluationPrompt, progressEvaluationSchema } from "./prompts/progressEvaluation";
 
 /**
  * ログ出力用に機密情報をマスキングするヘルパー関数
@@ -278,8 +274,18 @@ async function executeSubgoalLoop<TArgs = unknown>(
   for (let i = 0; i < maxLoops; i++) {
     console.log(`\n--- [サブゴールループ ${i + 1}/${maxLoops}] ---`);
 
-    const toolCall = await runAnalystSwarm(subgoal, state, llms, lastError);
-    lastError = undefined;
+    let toolCall: ToolCall<string, any>;
+    try {
+      toolCall = await runAnalystSwarm(subgoal, state, llms, lastError);
+      lastError = undefined;
+    } catch (e: any) {
+      // プラン生成段階での失敗は再計画にエスカレーション
+      throw new ReplanNeededError(
+        "Analyst swarm failed to produce a plan.",
+        e instanceof Error ? e : new Error(String(e)),
+        { toolName: "analyst-swarm", args: { subgoal: subgoal.description } } as ToolCall<string, any>,
+      );
+    }
 
     const approvedPlan = await approvalCallback([
       toolCall as ToolCall<string, TArgs>,
@@ -319,6 +325,11 @@ async function executeSubgoalLoop<TArgs = unknown>(
         return true;
       } else {
         state.addQAFailureFeedback(qaResult.reasoning);
+        // QA失敗も失敗とみなし、failureTrackerに記録する
+        await failureTracker.recordFailure(
+          approvedToolCall,
+          state,
+        );
       }
     } catch (error: any) {
       lastError = error;
