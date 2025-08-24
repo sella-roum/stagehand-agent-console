@@ -5,33 +5,35 @@
 
 import { Stagehand } from "@browserbasehq/stagehand";
 import { AgentState } from "@/src/agentState";
-import { planSubgoals } from "@/src/chiefAgent";
+import { planMilestones } from "@/src/chiefAgent";
 import { subgoalCoordinator } from "@/src/subgoalCoordinator";
 import {
   AgentExecutionResult,
   CustomTool,
   ApprovalCallback,
-  Plan,
+  Milestone,
+  ReplanNeededError,
 } from "@/src/types";
-import { LanguageModel } from "ai";
-import { generateObjectWithRetry } from "@/src/utils/llm";
-import {
-  progressEvaluationSchema,
-  getProgressEvaluationPrompt,
-} from "@/src/prompts/progressEvaluation";
-import { updateMemoryAfterSubgoal } from "@/src/utils/memory";
 import { z } from "zod";
+import { getLlmInstance } from "@/src/utils/llm";
 
 /**
  * エージェントの実行設定
  */
 export interface OrchestratorConfig<TArgs = unknown> {
+  /** @deprecated マイルストーン計画に移行したため、この設定は将来的に削除されます。 */
   maxSubgoals?: number;
+  /** 各サブゴールで実行エージェントが試行できる最大ループ回数。 */
   maxLoopsPerSubgoal?: number;
+  /** 司令塔エージェントが再計画を試行できる最大回数。 */
   maxReplanAttempts?: number;
+  /** テスト環境で実行されているかどうか。 */
   isTestEnvironment?: boolean;
+  /** エージェントが利用可能なツールのリスト。 */
   tools?: CustomTool<z.AnyZodObject, TArgs>[];
+  /** ツール名で高速に検索するためのMap。 */
   toolRegistry?: Map<string, CustomTool<z.AnyZodObject, TArgs>>;
+  /** ユーザーに計画の承認を求めるためのコールバック関数。 */
   approvalCallback: ApprovalCallback<TArgs>;
 }
 
@@ -40,7 +42,6 @@ export interface OrchestratorConfig<TArgs = unknown> {
  * @param task - ユーザーが与える高レベルなタスク文字列。
  * @param stagehand - 初期化済みのStagehandインスタンス。
  * @param state - エージェントの状態を管理するインスタンス。
- * @param llm - 使用する言語モデルのインスタンス。
  * @param config - 実行に関する設定オプション。
  * @returns タスクの最終結果。
  * @throws タスク実行中に解決不能なエラーが発生した場合。
@@ -49,110 +50,55 @@ export async function orchestrateAgentTask<TArgs = unknown>(
   task: string,
   stagehand: Stagehand,
   state: AgentState,
-  llm: LanguageModel,
   config: OrchestratorConfig<TArgs>,
 ): Promise<AgentExecutionResult> {
-  const {
-    maxSubgoals = 10,
-    maxLoopsPerSubgoal = 15,
-    maxReplanAttempts = 3,
-    approvalCallback,
-  } = config;
+  const { maxReplanAttempts = 3, approvalCallback } = config;
 
-  // 1. 計画
+  const highPerformanceLlm = getLlmInstance("default");
+  const fastLlm = getLlmInstance("fast");
+  const llms = { highPerformance: highPerformanceLlm, fast: fastLlm };
+
   console.log(`👑 司令塔エージェントがタスク計画を開始: "${task}"`);
-  let subgoals: Plan = await planSubgoals(task, llm);
-  if (subgoals.length > maxSubgoals) {
-    console.warn(
-      `計画されたサブゴールが多すぎます: ${subgoals.length} > ${maxSubgoals}。先頭${maxSubgoals}件に制限します。`,
-    );
-    subgoals = subgoals.slice(0, maxSubgoals);
-  }
+  let milestones: Milestone[] = await planMilestones(
+    task,
+    llms.highPerformance,
+  );
 
-  const completedSubgoals: string[] = [];
+  const completedMilestones: string[] = [];
   let replanCount = 0;
 
-  // 2. サブゴール実行ループ
-  while (subgoals.length > 0) {
-    const subgoal = subgoals.shift();
-    if (!subgoal) continue;
+  while (milestones.length > 0) {
+    const milestone = milestones.shift();
+    if (!milestone) continue;
 
     console.log(
-      `\n▶️ サブゴール ${completedSubgoals.length + 1} 実行中: "${
-        subgoal.description
+      `\n🏁 マイルストーン ${completedMilestones.length + 1} 実行中: "${
+        milestone.description
       }"`,
     );
-    const historyStartIndex = state.getHistory().length;
 
     try {
-      // 2a. サブゴール実行
       const success = await subgoalCoordinator(
-        subgoal,
+        milestone,
         stagehand,
         state,
         task,
-        llm,
-        {
-          ...config,
-          maxLoops: maxLoopsPerSubgoal,
-          approvalCallback,
-        },
+        llms,
+        { ...config, approvalCallback },
       );
 
       if (!success) {
-        throw new Error(
-          `サブゴール "${subgoal.description}" の実行に失敗しました。`,
+        // subgoalCoordinatorがfalseを返した場合、それは再計画が必要なエラーを示唆する
+        throw new ReplanNeededError(
+          `マイルストーン "${milestone.description}" の実行に失敗しました。`,
+          new Error("Subgoal coordination failed"),
+          { toolCallId: "replan-request", toolName: "replan", args: {} },
         );
       }
-      completedSubgoals.push(subgoal.description);
-      replanCount = 0;
-
-      // 2b. 記憶の更新
-      try {
-        await updateMemoryAfterSubgoal(
-          state,
-          llm,
-          task,
-          subgoal,
-          historyStartIndex,
-          200,
-        );
-      } catch (e: any) {
-        console.warn(
-          `メモリ更新に失敗しました（継続します）: ${e?.message ?? e}`,
-        );
-      }
-
-      // 2c. 進捗評価
-      console.log("🕵️‍♂️ タスク全体の進捗を評価中...");
-      const historySummary = JSON.stringify(state.getHistory().slice(-3));
-      let currentUrl = "about:blank";
-      try {
-        currentUrl = state.getActivePage().url();
-      } catch {
-        // ページが無い/取得失敗時は既定値
-      }
-      const evalPrompt = getProgressEvaluationPrompt(
-        task,
-        historySummary,
-        currentUrl,
-      );
-
-      const { object: progress } = await generateObjectWithRetry({
-        model: llm,
-        schema: progressEvaluationSchema,
-        prompt: evalPrompt,
-      });
-
-      if (progress.isTaskCompleted) {
-        console.log(
-          `✅ タスクは既に完了したと判断しました。理由: ${progress.reasoning}`,
-        );
-        return { is_success: true, reasoning: progress.reasoning };
-      }
+      completedMilestones.push(milestone.description);
+      replanCount = 0; // 成功したらリセット
     } catch (error: any) {
-      // 2d. 再計画処理
-      if (error.name === "ReplanNeededError") {
+      if (error instanceof ReplanNeededError) {
         if (replanCount >= maxReplanAttempts) {
           throw new Error(
             `再計画の試行回数が上限（${maxReplanAttempts}回）に達しました。タスクの自動実行を中止します。`,
@@ -163,28 +109,40 @@ export async function orchestrateAgentTask<TArgs = unknown>(
         console.warn(
           `🚨 再計画が必要です (${replanCount}/${maxReplanAttempts})。司令塔エージェントを呼び出します...`,
         );
-        const errorContext = JSON.stringify({
-          name: error.originalError?.name ?? error.name,
-          message: error.originalError?.message ?? error.message,
-          failedTool: error.failedToolCall
-            ? {
-                name: error.failedToolCall.toolName,
-                args: error.failedToolCall.args,
-              }
-            : undefined,
-        });
-        subgoals = await planSubgoals(task, llm, state, subgoal, errorContext);
-        completedSubgoals.push(`${subgoal.description} (失敗)`);
-        if (subgoals.length === 0) {
-          throw new Error("再計画の結果、実行可能なサブゴールがありません。");
+
+        const failedSubgoalForReplan = {
+          description: milestone.description,
+          successCriteria: milestone.completionCriteria,
+        };
+
+        const newMilestones = await planMilestones(
+          task,
+          llms.highPerformance,
+          state,
+          failedSubgoalForReplan,
+          error.originalError.message,
+          error.failureContext,
+        );
+
+        if (
+          newMilestones.length === 1 &&
+          newMilestones[0].description.toLowerCase().includes("finish")
+        ) {
+          const reasoning = newMilestones[0].completionCriteria;
+          console.log(
+            `👑 司令塔エージェントがタスクの中止を決定しました。理由: ${reasoning}`,
+          );
+          return { is_success: false, reasoning };
         }
-        continue; // 次のループ（新しい計画）へ
+
+        milestones = newMilestones;
+        completedMilestones.push(`${milestone.description} (失敗から再計画)`);
+        continue;
       }
-      throw error; // 解決不能なエラーは再スロー
+      throw error;
     }
   }
 
-  // 3. 最終結果の取得
   const finalHistory = state.getHistory();
   const finishRecord = finalHistory.find(
     (h) => h.toolCall?.toolName === "finish",
@@ -194,17 +152,16 @@ export async function orchestrateAgentTask<TArgs = unknown>(
     typeof finishRecord.result === "string" &&
     finishRecord.result.startsWith("SELF_EVALUATION_COMPLETE:")
   ) {
-    console.log("✅ 全てのサブゴールの処理が完了しました。");
     const PREFIX = "SELF_EVALUATION_COMPLETE:";
     const payload = finishRecord.result.slice(PREFIX.length).trimStart();
-    try {
-      return JSON.parse(payload);
-    } catch (e) {
-      throw new Error(
-        `完了結果のJSONパースに失敗しました: ${(e as Error).message}`,
-      );
-    }
+    return JSON.parse(payload);
   } else {
-    throw new Error("エージェントはタスクを完了せずに終了しました。");
+    console.log(
+      "✅ 全てのマイルストーンが完了しましたが、finishツールは呼び出されませんでした。タスク成功とみなします。",
+    );
+    return {
+      is_success: true,
+      reasoning: "全ての計画されたマイルストーンを正常に完了しました。",
+    };
   }
 }

@@ -15,7 +15,7 @@ import fs from "fs/promises";
 import { AgentState } from "./agentState";
 import { formatContext } from "./prompts/context";
 import { generateObjectWithRetry } from "@/src/utils/llm";
-import { Plan, Subgoal } from "./types";
+import { Milestone, Subgoal, FailureContext } from "./types";
 
 /**
  * 司令塔エージェントとして、タスクの計画または再計画を行います。
@@ -24,15 +24,17 @@ import { Plan, Subgoal } from "./types";
  * @param state - (オプション) 再計画時に現在のエージェントの状態を渡す。
  * @param failedSubgoal - (オプション) 再計画のトリガーとなった失敗したサブゴール。
  * @param errorContext - (オプション) 再計画のトリガーとなったエラー情報。
- * @returns サブゴールの配列。
+ * @param failureContext - (オプション) 失敗パターンの詳細な分析結果。
+ * @returns マイルストーンの配列。
  */
-export async function planSubgoals(
+export async function planMilestones(
   task: string,
   llm: LanguageModel,
   state?: AgentState,
   failedSubgoal?: Subgoal,
   errorContext?: string,
-): Promise<Plan> {
+  failureContext?: FailureContext,
+): Promise<Milestone[]> {
   // 再計画パラメータの整合性チェック
   const isReplanMode = state && failedSubgoal && errorContext;
 
@@ -60,11 +62,12 @@ export async function planSubgoals(
       completedSubgoals,
       failedSubgoal: failedSubgoal.description,
       errorContext,
+      failureContext,
     });
     planFileName = `replan_${Date.now()}.json`;
   } else {
     // --- 初期計画モード ---
-    console.log("👑 司令塔エージェントがタスク計画を開始...");
+    console.log("👑 司令塔エージェントが戦略計画を開始...");
     prompt = getChiefAgentPrompt(task);
   }
 
@@ -74,11 +77,11 @@ export async function planSubgoals(
     schema: chiefAgentSchema,
   });
 
-  console.log("📝 計画の理由:", plan.reasoning);
-  console.log("📋 生成されたサブゴールと成功条件:");
-  plan.subgoals.forEach((goal: Subgoal, index: number) => {
-    console.log(`  ${index + 1}. [サブゴール] ${goal.description}`);
-    console.log(`     [成功条件] ${goal.successCriteria}`);
+  console.log("📝 戦略的理由:", plan.reasoning);
+  console.log("📋 生成されたマイルストーンと完了条件:");
+  plan.milestones.forEach((milestone: Milestone, index: number) => {
+    console.log(`  ${index + 1}. [マイルストーン] ${milestone.description}`);
+    console.log(`     [完了条件] ${milestone.completionCriteria}`);
   });
 
   try {
@@ -89,5 +92,5 @@ export async function planSubgoals(
     console.warn(`警告: 計画ファイルの保存に失敗しました。理由: ${e.message}`);
   }
 
-  return plan.subgoals;
+  return plan.milestones;
 }

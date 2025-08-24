@@ -6,7 +6,6 @@
 
 import { Stagehand } from "@browserbasehq/stagehand";
 import { AgentState } from "@/src/agentState";
-import { getLlmInstance } from "@/src/utils/llm";
 import { availableTools } from "@/src/tools";
 import { AgentExecutionResult } from "@/src/types";
 import { orchestrateAgentTask } from "./agentOrchestrator";
@@ -21,7 +20,7 @@ const testSafeToolRegistry = new Map(
  * エージェントの実行設定を定義するインターフェース。
  */
 export interface AgentTaskConfig {
-  /** 司令塔エージェントが生成できるサブゴールの最大数。デフォルトは10。 */
+  /** @deprecated マイルストーン計画に移行したため、この設定は将来的に削除されます。 */
   maxSubgoals?: number;
   /** 各サブゴールで実行エージェントが試行できる最大ループ回数。デフォルトは15。 */
   maxLoopsPerSubgoal?: number;
@@ -43,9 +42,8 @@ export async function runAgentTask(
   config: AgentTaskConfig = {},
 ): Promise<AgentExecutionResult> {
   const state = new AgentState(stagehand);
-  const llm = getLlmInstance();
 
-  return await orchestrateAgentTask(task, stagehand, state, llm, {
+  return await orchestrateAgentTask(task, stagehand, state, {
     ...config,
     isTestEnvironment: true,
     tools: testSafeTools,

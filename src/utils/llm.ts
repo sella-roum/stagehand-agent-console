@@ -13,18 +13,43 @@ const INITIAL_BACKOFF_MS = 1000;
 
 /**
  * 環境変数に基づいて、適切なLLMクライアントのインスタンスを生成して返します。
+ * @param role - モデルの役割 ('default' for high-performance, 'fast' for speed/low-cost)。
  * @returns Vercel AI SDKの`LanguageModel`インスタンス。
  * @throws {Error} 必要なAPIキーが.envファイルに設定されていない場合にエラーをスローします。
  */
-export function getLlmInstance(): LanguageModel {
+export function getLlmInstance(
+  role: "default" | "fast" = "default",
+): LanguageModel {
   const LLM_PROVIDER = process.env.LLM_PROVIDER || "google";
 
-  if (LLM_PROVIDER === "groq") {
+  if (role === "fast" && LLM_PROVIDER === "groq") {
     const groqApiKey = process.env.GROQ_API_KEY;
     if (!groqApiKey)
       throw new Error("GROQ_API_KEYが.envファイルに設定されていません。");
     const groq = createGroq({ apiKey: groqApiKey });
-    // Groqは現在Vision非対応のため、モードに関わらずテキストモデルを使用
+    const modelName = process.env.GROQ_MODEL || "";
+    if (!modelName)
+      throw new Error("GROQ_MODELが.envファイルに設定されていません。");
+    return groq(modelName);
+  }
+
+  if (LLM_PROVIDER === "google") {
+    const googleApiKey = process.env.GOOGLE_API_KEY;
+    if (!googleApiKey)
+      throw new Error("GOOGLE_API_KEYが.envファイルに設定されていません。");
+    const google = createGoogleGenerativeAI({ apiKey: googleApiKey });
+    const modelName =
+      role === "fast"
+        ? process.env.GEMINI_FLASH_MODEL || ""
+        : process.env.GEMINI_PRO_MODEL || "";
+    if (!modelName)
+      throw new Error("GEMINI model name is not set in .env file.");
+    return google(modelName);
+  } else if (LLM_PROVIDER === "groq") {
+    const groqApiKey = process.env.GROQ_API_KEY;
+    if (!groqApiKey)
+      throw new Error("GROQ_API_KEYが.envファイルに設定されていません。");
+    const groq = createGroq({ apiKey: groqApiKey });
     const modelName = process.env.GROQ_MODEL || "";
     if (!modelName)
       throw new Error("GROQ_MODELが.envファイルに設定されていません。");
@@ -46,14 +71,14 @@ export function getLlmInstance(): LanguageModel {
       throw new Error("OPENROUTER_MODELが.envファイルに設定されていません。");
     return openrouter(modelName);
   } else {
-    // google
+    // デフォルトはGoogle
     const googleApiKey = process.env.GOOGLE_API_KEY;
     if (!googleApiKey)
       throw new Error("GOOGLE_API_KEYが.envファイルに設定されていません。");
     const google = createGoogleGenerativeAI({ apiKey: googleApiKey });
-    const modelName = process.env.GEMINI_MODEL || "";
+    const modelName = process.env.GEMINI_PRO_MODEL || "gemini-1.5-pro-latest";
     if (!modelName)
-      throw new Error("GEMINI_MODELが.envファイルに設定されていません。");
+      throw new Error("GEMINI_PRO_MODEL is not set in .env file.");
     return google(modelName);
   }
 }
