@@ -196,22 +196,42 @@ async function runAnalystSwarm(
   llms: LlmInstances,
   lastError?: Error,
 ): Promise<ToolCall<string, any>> {
-  const proposals: Proposal[] = [];
+  const promises: Promise<Proposal<any>>[] = [];
 
-  const domAnalyst = new DomAnalyst(llms.fast);
-  proposals.push(await domAnalyst.proposeAction(state));
+  promises.push(new DomAnalyst(llms.fast).proposeAction(state));
 
   if (lastError) {
-    const historyAnalyst = new HistoryAnalyst(llms.fast);
-    proposals.push(await historyAnalyst.proposeAction(state, lastError));
+    promises.push(
+      new HistoryAnalyst(llms.fast).proposeAction(state, lastError),
+    );
+  }
+
+  const results = await Promise.allSettled(promises);
+  const proposals: Proposal<any>[] = [];
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      proposals.push(result.value);
+    } else {
+      console.warn(`アナリストの実行に失敗: ${result.reason}`);
+    }
   }
 
   if (
     process.env.AGENT_MODE === "vision" &&
-    (proposals[0].requiresVision || lastError)
+    (proposals[0]?.requiresVision || lastError)
   ) {
-    const visionAnalyst = new VisionAnalyst(llms.highPerformance);
-    proposals.push(await visionAnalyst.proposeAction(state));
+    try {
+      const visionProposal = await new VisionAnalyst(
+        llms.highPerformance,
+      ).proposeAction(state);
+      proposals.push(visionProposal);
+    } catch (error) {
+      console.warn(`Vision分析に失敗: ${error}`);
+    }
+  }
+
+  if (proposals.length === 0) {
+    throw new Error("すべてのアナリストが提案の生成に失敗しました");
   }
 
   if (proposals.length === 1) {
@@ -292,6 +312,7 @@ async function executeSubgoalLoop<TArgs = unknown>(
         originalTask,
       );
       state.addHistory({ toolCall: approvedToolCall, result });
+      failureTracker.recordSuccess(); // 成功を記録
 
       const qaResult = await qaAgent(subgoal, state, llms.fast);
       if (qaResult.isSuccess) {
@@ -303,7 +324,7 @@ async function executeSubgoalLoop<TArgs = unknown>(
       lastError = error;
       state.addHistory({ toolCall: approvedToolCall, error: error.message });
 
-      failureTracker.recordFailure(approvedToolCall, state);
+      await failureTracker.recordFailure(approvedToolCall, state);
       if (failureTracker.isStuck()) {
         const failureContext = failureTracker.getFailureContext();
         throw new ReplanNeededError(
@@ -377,7 +398,7 @@ export async function subgoalCoordinator<TArgs = unknown>(
     if (!subgoal) continue;
 
     console.log(`\n▶️ サブゴール実行中: "${subgoal.description}"`);
-    state.setCurrentSubgoal(subgoal);
+    // setCurrentSubgoalはdequeueSubgoal内で呼ばれるようになった
     const historyStartIndex = state.getHistory().length;
 
     const subgoalSuccess = await executeSubgoalLoop(
@@ -411,6 +432,8 @@ export async function subgoalCoordinator<TArgs = unknown>(
         console.log(
           `✅ タスクはサブゴール "${subgoal.description}" 完了時点で達成されたと判断しました。`,
         );
+        state.clearTaskQueue(); // 残りのサブゴールをクリアして早期完了
+        break; // マイルストーンのループを抜ける
       }
     } catch (e: any) {
       console.warn(

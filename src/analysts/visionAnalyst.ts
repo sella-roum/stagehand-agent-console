@@ -3,6 +3,7 @@ import { AgentState } from "@/src/agentState";
 import { BaseAnalyst, Proposal } from "./baseAnalyst";
 import { generateObjectWithRetry } from "@/src/utils/llm";
 import { z } from "zod";
+import { randomUUID } from "crypto";
 
 /**
  * Vision Analystの出力形式を定義するZodスキーマ。
@@ -39,7 +40,7 @@ export class VisionAnalyst implements BaseAnalyst {
    * @param state - 現在のエージェントの状態。
    * @returns 行動提案 (Proposal) のPromise。
    */
-  async proposeAction(state: AgentState): Promise<Proposal> {
+  async proposeAction(state: AgentState): Promise<Proposal<any>> {
     const page = state.getActivePage();
     const screenshotBuffer = await page.screenshot();
     const screenshotDataUrl = `data:image/png;base64,${screenshotBuffer.toString("base64")}`;
@@ -77,7 +78,7 @@ ${currentSubgoal}
     });
 
     const toolCall: ToolCall<string, any> = {
-      toolCallId: `vis-${Date.now()}`,
+      toolCallId: `vis-${randomUUID()}`,
       toolName: analysis.suggestion.toolName,
       args: analysis.suggestion.args,
     };

@@ -7,8 +7,13 @@
 import { Stagehand } from "@browserbasehq/stagehand";
 import { AgentState } from "@/src/agentState";
 import { availableTools } from "@/src/tools";
-import { AgentExecutionResult } from "@/src/types";
+import {
+  AgentExecutionResult,
+  ApprovalCallback,
+  CustomTool,
+} from "@/src/types";
 import { orchestrateAgentTask } from "./agentOrchestrator";
+import { z } from "zod";
 
 // テスト環境ではユーザーへの問い合わせができないため、`ask_user`ツールを無効化する
 const testSafeTools = availableTools.filter((t) => t.name !== "ask_user");
@@ -24,6 +29,12 @@ export interface AgentTaskConfig {
   maxSubgoals?: number;
   /** 各サブゴールで実行エージェントが試行できる最大ループ回数。デフォルトは15。 */
   maxLoopsPerSubgoal?: number;
+  /** (オプション) テストごとに使用するツールを限定する場合に指定。 */
+  tools?: CustomTool<z.AnyZodObject, any>[];
+  /** (オプション) テストごとに使用するツールレジストリを限定する場合に指定。 */
+  toolRegistry?: Map<string, CustomTool<z.AnyZodObject, any>>;
+  /** (オプション) カスタムの承認ロジックをテストする場合に指定。 */
+  approvalCallback?: ApprovalCallback;
 }
 
 /**
@@ -43,12 +54,15 @@ export async function runAgentTask(
 ): Promise<AgentExecutionResult> {
   const state = new AgentState(stagehand);
 
+  // テスト環境では常に承認するデフォルトのコールバック
+  const defaultApprove: ApprovalCallback = async (plan) => plan;
+
   return await orchestrateAgentTask(task, stagehand, state, {
     ...config,
     isTestEnvironment: true,
-    tools: testSafeTools,
-    toolRegistry: testSafeToolRegistry,
-    // テスト環境では常に承認するコールバック
-    approvalCallback: async (plan) => plan,
+    // 呼び出し側が与えたものを尊重し、未指定時のみテスト用のデフォルトを適用
+    tools: config.tools ?? testSafeTools,
+    toolRegistry: config.toolRegistry ?? testSafeToolRegistry,
+    approvalCallback: config.approvalCallback ?? defaultApprove,
   });
 }

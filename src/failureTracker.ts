@@ -21,14 +21,32 @@ export class FailureTracker {
   >();
 
   /**
-   * ツール呼び出しオブジェクトをハッシュ化し、一意の識別子を生成する。
+   * 成功が確認された際に内部状態を一部リセットする。
+   */
+  public recordSuccess(): void {
+    this.consecutiveFailures = 0;
+    // 進捗があったとみなし、停滞カウンタもリセット
+    this.stagnationCount = 0;
+    // 履歴は学習用途で残す判断もあるが、必要に応じて減衰/クリア戦略を検討
+  }
+
+  /**
+   * ツール呼び出しオブジェクトを、キーの順序に依存しない安定したハッシュに変換する。
    * @param toolCall - ハッシュ化するツール呼び出し。
    * @returns ハッシュ化された文字列。
    */
   private hashToolCall(toolCall: ToolCall<string, any>): string {
+    const stable = (obj: any): any =>
+      obj && typeof obj === "object"
+        ? Array.isArray(obj)
+          ? obj.map(stable)
+          : Object.keys(obj)
+              .sort()
+              .reduce((acc, k) => ((acc[k] = stable(obj[k])), acc), {} as any)
+        : obj;
     const data = JSON.stringify({
       toolName: toolCall.toolName,
-      args: toolCall.args,
+      args: stable(toolCall.args),
     });
     return createHash("sha256").update(data).digest("hex");
   }
@@ -38,10 +56,10 @@ export class FailureTracker {
    * @param toolCall - 失敗したツール呼び出し。
    * @param state - 現在のエージェントの状態。
    */
-  public recordFailure(
+  public async recordFailure(
     toolCall: ToolCall<string, any>,
     state: AgentState,
-  ): void {
+  ): Promise<void> {
     this.consecutiveFailures++;
 
     // 失敗パターンの追跡
@@ -51,7 +69,8 @@ export class FailureTracker {
     this.failureHistory.set(callHash, history);
 
     // 停滞の検知
-    const currentStateSnapshot = state.getActivePage().url();
+    const page = state.getActivePage();
+    const currentStateSnapshot = `${page.url()}::${(await page.title().catch(() => "")) ?? ""}`;
     if (
       this.lastStateSnapshot &&
       this.lastStateSnapshot === currentStateSnapshot
@@ -90,13 +109,36 @@ export class FailureTracker {
       summary += ` 特に、ツール「${repeated.toolCall.toolName}」が同じ引数で${repeated.count}回失敗しました。`;
     }
     if (this.stagnationCount >= MAX_STAGNATION_COUNT) {
-      summary += ` さらに、${this.stagnationCount}回の試行の間、ブラウザのURLが変化しておらず、進捗が停滞しています。`;
+      summary += ` さらに、${this.stagnationCount}回の試行の間、ブラウザの状態（URLとタイトル）が変化しておらず、進捗が停滞しています。`;
     }
+
+    const mask = (v: any): any => {
+      const SENSITIVE_KEYS = new Set([
+        "password",
+        "token",
+        "apiKey",
+        "authorization",
+        "cookie",
+        "cookies",
+      ]);
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        const out: any = {};
+        for (const k of Object.keys(v)) {
+          out[k] = SENSITIVE_KEYS.has(k.toLowerCase()) ? "[REDACTED]" : v[k];
+        }
+        return out;
+      }
+      return v;
+    };
 
     return {
       consecutiveFailures: this.consecutiveFailures,
       repeatedFailure: repeated
-        ? { ...repeated.toolCall, count: repeated.count }
+        ? {
+            toolName: repeated.toolCall.toolName,
+            args: mask(repeated.toolCall.args),
+            count: repeated.count,
+          }
         : undefined,
       stagnationCount: this.stagnationCount,
       summary,

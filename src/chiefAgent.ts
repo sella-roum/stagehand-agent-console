@@ -35,8 +35,8 @@ export async function planMilestones(
   errorContext?: string,
   failureContext?: FailureContext,
 ): Promise<Milestone[]> {
-  // 再計画パラメータの整合性チェック
-  const isReplanMode = state && failedSubgoal && errorContext;
+  // isReplanModeのチェックにより、以降のブロックでstate, failedSubgoal, errorContextがundefinedでないことが保証される
+  const isReplanMode = !!(state && failedSubgoal && errorContext);
 
   let prompt: string;
   let planFileName = "plan.json";
@@ -44,7 +44,7 @@ export async function planMilestones(
   if (isReplanMode) {
     // --- 再計画モード ---
     console.log("👑 司令塔エージェントがタスクを再計画...");
-    const PAGE_SUMMARY_LIMIT = 1000; // 設定可能な定数として定義
+    const PAGE_SUMMARY_LIMIT = 1000;
     const summary = await state
       .getActivePage()
       .extract()
@@ -81,15 +81,21 @@ export async function planMilestones(
   console.log("📋 生成されたマイルストーンと完了条件:");
   plan.milestones.forEach((milestone: Milestone, index: number) => {
     console.log(`  ${index + 1}. [マイルストーン] ${milestone.description}`);
-    console.log(`     [完了条件] ${milestone.completionCriteria}`);
+    const cc = milestone.completionCriteria || "";
+    const ccShort = cc.length > 200 ? cc.slice(0, 200) + "…[TRUNCATED]" : cc;
+    console.log(`     [完了条件] ${ccShort}`);
   });
 
-  try {
-    const planPath = getSafePath(planFileName);
-    await fs.writeFile(planPath, JSON.stringify(plan, null, 2));
-    console.log(`計画を ${planPath} に保存しました。`);
-  } catch (e: any) {
-    console.warn(`警告: 計画ファイルの保存に失敗しました。理由: ${e.message}`);
+  if (process.env.SAVE_PLAN_FILES === "1") {
+    try {
+      const planPath = getSafePath(planFileName);
+      await fs.writeFile(planPath, JSON.stringify(plan, null, 2));
+      console.log(`計画を ${planPath} に保存しました。`);
+    } catch (e: any) {
+      console.warn(
+        `警告: 計画ファイルの保存に失敗しました。理由: ${e.message}`,
+      );
+    }
   }
 
   return plan.milestones;

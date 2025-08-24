@@ -13,8 +13,8 @@ import { CustomTool } from "@/src/types";
  * @param tools - カスタムツールの配列。
  * @returns Vercel AI SDK形式のツールオブジェクト。
  */
-function mapCustomToolsToAITools<TSchema extends z.AnyZodObject>(
-  tools: ReadonlyArray<CustomTool<TSchema, unknown>>,
+function mapCustomToolsToAITools(
+  tools: ReadonlyArray<CustomTool<z.AnyZodObject, unknown>>,
 ): Record<string, Tool> {
   return tools.reduce(
     (acc, tool) => {
@@ -47,12 +47,15 @@ export class DomAnalyst implements BaseAnalyst {
    * @param state - 現在のエージェントの状態。
    * @returns 行動提案 (Proposal) のPromise。
    */
-  async proposeAction(state: AgentState): Promise<Proposal> {
+  async proposeAction(state: AgentState): Promise<Proposal<any>> {
     const summary = await state
       .getActivePage()
       .extract()
       .then((e) => e?.page_text?.substring(0, 2000) || "ページ情報なし")
-      .catch(() => "ページ情報なし");
+      .catch((error) => {
+        console.warn(`ページ情報の抽出に失敗: ${error.message}`);
+        return "ページ情報なし";
+      });
     const context = await formatContext(state, summary);
     const currentSubgoal = state.getHistory().slice(-1)[0]?.subgoalDescription;
 
@@ -77,10 +80,11 @@ export class DomAnalyst implements BaseAnalyst {
 
     const toolCall = toolCalls[0];
 
-    // TODO: 確信度と支援要求フラグをLLMに判断させるロジックをより高度化する
-    const requiresVision =
-      text?.toLowerCase().includes("vision") ||
-      text?.toLowerCase().includes("screenshot");
+    const requiresVision = !!(
+      toolCall.toolName === "vision_analyze" ||
+      toolCall.toolName === "click_at_coordinates" ||
+      (text && /(?:vision|screenshot|画像|スクリーンショット)/i.test(text))
+    );
 
     return {
       toolCall,

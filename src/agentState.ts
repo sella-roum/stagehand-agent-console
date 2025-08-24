@@ -61,6 +61,12 @@ export class AgentState {
    * @param plan - 追加する戦術計画 (サブゴールの配列)。
    */
   public enqueuePlan(plan: TacticalPlan): void {
+    if (!Array.isArray(plan) || plan.length === 0) {
+      console.log(
+        "📋 追加対象のサブゴールは0件のため、タスクキューは変更されません。",
+      );
+      return;
+    }
     this.taskQueue.push(...plan);
     console.log(
       `📋 タスクキューに${plan.length}件のサブゴールを追加しました。`,
@@ -68,11 +74,15 @@ export class AgentState {
   }
 
   /**
-   * タスクキューの先頭からサブゴールを一つ取り出します。
+   * タスクキューの先頭からサブゴールを一つ取り出し、それを現在のサブゴールとして設定します。
    * @returns キューの先頭にあるサブゴール。キューが空の場合はundefined。
    */
   public dequeueSubgoal(): Subgoal | undefined {
-    return this.taskQueue.shift();
+    const subgoal = this.taskQueue.shift();
+    if (subgoal) {
+      this.currentSubgoal = subgoal;
+    }
+    return subgoal;
   }
 
   /**
@@ -81,6 +91,30 @@ export class AgentState {
    */
   public isQueueEmpty(): boolean {
     return this.taskQueue.length === 0;
+  }
+
+  /**
+   * 現在のタスクキューの長さを取得します。
+   * @returns キューに残っているサブゴールの数。
+   */
+  public getTaskQueueLength(): number {
+    return this.taskQueue.length;
+  }
+
+  /**
+   * タスクキューの先頭にあるサブゴールを、キューから削除せずに参照します。
+   * @returns キューの先頭にあるサブゴール。キューが空の場合はundefined。
+   */
+  public peekSubgoal(): Subgoal | undefined {
+    return this.taskQueue[0];
+  }
+
+  /**
+   * タスクキューに残っているすべてのサブゴールをクリアします。
+   */
+  public clearTaskQueue(): void {
+    this.taskQueue = [];
+    console.log("🗑️ タスクキューをクリアしました。");
   }
 
   /**

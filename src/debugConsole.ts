@@ -6,7 +6,6 @@
 import type { Stagehand } from "@browserbasehq/stagehand";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { getLlmInstance } from "@/src/utils/llm";
 import { AgentState } from "@/src/agentState";
 import { InterventionMode } from "@/src/types";
 import { ToolCall } from "ai";
@@ -240,15 +239,15 @@ export async function interactiveDebugConsole(
             `👑 司令塔エージェントにタスクを依頼しました: "${argument}"`,
           );
 
-          const llm = getLlmInstance();
           try {
+            // 修正: 不要なllm引数を削除し、approvalCallbackのplanに型を追加
             const result = await orchestrateAgentTask(
               argument,
               stagehand,
               state,
-              llm,
               {
-                approvalCallback: (plan) => requestUserApproval(state, plan),
+                approvalCallback: (plan: ToolCall<string, any>[]) =>
+                  requestUserApproval(state, plan),
               },
             );
             console.log("\n--- タスク完了 ---");

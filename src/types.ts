@@ -1,26 +1,14 @@
 import { z } from "zod";
 import { ObserveResult } from "@browserbasehq/stagehand";
-// ToolCallをインポート
 import { ToolCall, LanguageModel } from "ai";
 import { AgentState } from "@/src/agentState";
-
-/**
- * エラー分析の文脈で必要となるため、簡略化したPlanStepを定義
- * @deprecated より構造化された型に置き換えられています。
- */
-export type PlanStep = {
-  command: string;
-  argument: string | null;
-};
 
 /**
  * 司令塔エージェントによって生成される単一のサブゴールを表す型。
  * 戦術計画の最小単位。
  */
 export type Subgoal = {
-  /** 実行する具体的なサブゴール。 */
   description: string;
-  /** このサブゴールが成功したと判断するための客観的で検証可能な条件。 */
   successCriteria: string;
 };
 
@@ -29,6 +17,8 @@ export type Subgoal = {
  * これがさらに具体的なサブゴールに分解される。
  */
 export type Milestone = {
+  /** 安定識別子（UI/ログ突合せ用） */
+  id?: string;
   /** 達成すべき高レベルなマイルストーン。 */
   description: string;
   /** このマイルストーンが完了したと判断するための客観的で検証可能な条件。 */
@@ -53,6 +43,10 @@ export type Plan = Subgoal[];
 export type ExecutionRecord = {
   /** 実行されたツール呼び出し。 */
   toolCall: ToolCall<string, any>;
+  /** 行動の開始時刻(Epoch ms)。 */
+  timestamp?: number;
+  /** 行動の実行時間(ms)。 */
+  durationMs?: number;
   /** この行動が属していたサブゴールの説明。 */
   subgoalDescription?: string;
   /** この行動が属していたサブゴールの成功条件。 */
@@ -213,7 +207,7 @@ export class ReplanNeededError extends Error {
     failedToolCall: ToolCall<string, unknown>,
     failureContext?: FailureContext,
   ) {
-    super(message);
+    super(message, { cause: originalError });
     this.name = "ReplanNeededError";
     this.originalError = originalError;
     this.failedToolCall = failedToolCall;
