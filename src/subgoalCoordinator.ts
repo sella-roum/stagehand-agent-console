@@ -39,6 +39,7 @@ import {
   getProgressEvaluationPrompt,
   progressEvaluationSchema,
 } from "./prompts/progressEvaluation";
+import { InvalidToolArgumentError } from "@/src/errors";
 
 /**
  * ログ出力用に機密情報をマスキングするヘルパー関数
@@ -322,6 +323,18 @@ async function executeSubgoalLoop<TArgs = unknown>(
         throw new Error(`不明なツールです: ${approvedToolCall.toolName}`);
 
       const parsedArgs = tool.schema.parse(approvedToolCall.args);
+
+      if (tool.precondition) {
+        const check = await tool.precondition(state, parsedArgs);
+        if (!check.success) {
+          throw new InvalidToolArgumentError(
+            `事前条件チェック失敗: ${check.message}`,
+            tool.name,
+            parsedArgs,
+          );
+        }
+      }
+
       const safeArgs = maskSensitive(parsedArgs as Record<string, unknown>);
       logAgentMessage(
         "Executor",
