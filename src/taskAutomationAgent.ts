@@ -14,7 +14,7 @@ import { getBasePrompt } from "@/src/prompts/base";
 import { formatContext } from "@/src/prompts/context";
 import { availableTools, toolRegistry } from "@/src/tools/index";
 import { generateAndSaveSkill } from "@/src/skillManager";
-import { CustomTool, ApprovalCallback } from "@/src/types";
+import { CustomTool, ApprovalCallback, ReplanNeededError } from "@/src/types";
 import { InvalidToolArgumentError } from "@/src/errors";
 import {
   generateTextWithRetry,
@@ -48,25 +48,6 @@ function maskSensitive<T extends Record<string, unknown>>(obj: T): T {
     }
   }
   return clone;
-}
-
-/**
- * 再計画が必要であることを示すためのカスタムエラー
- */
-class ReplanNeededError extends Error {
-  public originalError: Error;
-  public failedToolCall: ToolCall<string, unknown>;
-
-  constructor(
-    message: string,
-    originalError: Error,
-    failedToolCall: ToolCall<string, unknown>,
-  ) {
-    super(message);
-    this.name = "ReplanNeededError";
-    this.originalError = originalError;
-    this.failedToolCall = failedToolCall;
-  }
 }
 
 /**
@@ -141,7 +122,7 @@ async function setupGlobalEventHandlers(
                 type: "text",
                 text: "この新しいページは、メインのタスクを妨げる不要なポップアップ（広告、クッキー同意など）ですか？",
               },
-              { type: "image", image: screenshotDataUrl },
+              { type: "image", image: new URL(screenshotDataUrl) },
             ],
           },
         ],

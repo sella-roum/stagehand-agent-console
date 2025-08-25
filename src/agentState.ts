@@ -10,6 +10,7 @@ import {
   TabInfo,
   InterventionMode,
   Subgoal,
+  TacticalPlan,
 } from "@/src/types";
 import * as readline from "node:readline/promises";
 import fs from "fs/promises";
@@ -42,6 +43,8 @@ export class AgentState {
   private completedSubgoals: string[] = [];
   // 現在実行中のサブゴール
   private currentSubgoal: Subgoal | null = null;
+  // Tactical Plannerによって生成されたサブゴールのキュー
+  private taskQueue: Subgoal[] = [];
 
   /**
    * AgentStateの新しいインスタンスを生成します。
@@ -51,6 +54,67 @@ export class AgentState {
     this.stagehand = stagehandInstance;
     this.context = stagehandInstance.page.context();
     this.pages = [stagehandInstance.page];
+  }
+
+  /**
+   * 戦術計画（サブゴールのリスト）をタスクキューの末尾に追加します。
+   * @param plan - 追加する戦術計画 (サブゴールの配列)。
+   */
+  public enqueuePlan(plan: TacticalPlan): void {
+    if (!Array.isArray(plan) || plan.length === 0) {
+      console.log(
+        "📋 追加対象のサブゴールは0件のため、タスクキューは変更されません。",
+      );
+      return;
+    }
+    this.taskQueue.push(...plan);
+    console.log(
+      `📋 タスクキューに${plan.length}件のサブゴールを追加しました。`,
+    );
+  }
+
+  /**
+   * タスクキューの先頭からサブゴールを一つ取り出し、それを現在のサブゴールとして設定します。
+   * @returns キューの先頭にあるサブゴール。キューが空の場合はundefined。
+   */
+  public dequeueSubgoal(): Subgoal | undefined {
+    const subgoal = this.taskQueue.shift();
+    if (subgoal) {
+      this.currentSubgoal = subgoal;
+    }
+    return subgoal;
+  }
+
+  /**
+   * タスクキューが空かどうかを確認します。
+   * @returns キューが空の場合はtrue、そうでない場合はfalse。
+   */
+  public isQueueEmpty(): boolean {
+    return this.taskQueue.length === 0;
+  }
+
+  /**
+   * 現在のタスクキューの長さを取得します。
+   * @returns キューに残っているサブゴールの数。
+   */
+  public getTaskQueueLength(): number {
+    return this.taskQueue.length;
+  }
+
+  /**
+   * タスクキューの先頭にあるサブゴールを、キューから削除せずに参照します。
+   * @returns キューの先頭にあるサブゴール。キューが空の場合はundefined。
+   */
+  public peekSubgoal(): Subgoal | undefined {
+    return this.taskQueue[0];
+  }
+
+  /**
+   * タスクキューに残っているすべてのサブゴールをクリアします。
+   */
+  public clearTaskQueue(): void {
+    this.taskQueue = [];
+    console.log("🗑️ タスクキューをクリアしました。");
   }
 
   /**

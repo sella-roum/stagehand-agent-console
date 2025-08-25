@@ -13,48 +13,82 @@ const INITIAL_BACKOFF_MS = 1000;
 
 /**
  * 環境変数に基づいて、適切なLLMクライアントのインスタンスを生成して返します。
+ * @param role - モデルの役割 ('default' for high-performance, 'fast' for speed/low-cost)。
  * @returns Vercel AI SDKの`LanguageModel`インスタンス。
- * @throws {Error} 必要なAPIキーが.envファイルに設定されていない場合にエラーをスローします。
+ * @throws {Error} 必要なAPIキーやモデル名が.envファイルに設定されていない場合にエラーをスローします。
  */
-export function getLlmInstance(): LanguageModel {
-  const LLM_PROVIDER = process.env.LLM_PROVIDER || "google";
+export function getLlmInstance(
+  role: "default" | "fast" = "default",
+): LanguageModel {
+  const provider = process.env.LLM_PROVIDER?.toLowerCase() || "google";
 
-  if (LLM_PROVIDER === "groq") {
-    const groqApiKey = process.env.GROQ_API_KEY;
-    if (!groqApiKey)
-      throw new Error("GROQ_API_KEYが.envファイルに設定されていません。");
-    const groq = createGroq({ apiKey: groqApiKey });
-    // Groqは現在Vision非対応のため、モードに関わらずテキストモデルを使用
-    const modelName = process.env.GROQ_MODEL || "";
-    if (!modelName)
-      throw new Error("GROQ_MODELが.envファイルに設定されていません。");
-    return groq(modelName);
-  } else if (LLM_PROVIDER === "openrouter") {
-    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
-    if (!openRouterApiKey)
-      throw new Error("OPENROUTER_API_KEYが.envファイルに設定されていません。");
-    const openrouter = createOpenAI({
-      apiKey: openRouterApiKey,
-      baseURL: "https://openrouter.ai/api/v1",
-      headers: {
-        "HTTP-Referer": "http://localhost:3000",
-        "X-Title": "Stagehand Agent Console",
-      },
-    });
-    const modelName = process.env.OPENROUTER_MODEL || "";
-    if (!modelName)
-      throw new Error("OPENROUTER_MODELが.envファイルに設定されていません。");
-    return openrouter(modelName);
-  } else {
-    // google
-    const googleApiKey = process.env.GOOGLE_API_KEY;
-    if (!googleApiKey)
-      throw new Error("GOOGLE_API_KEYが.envファイルに設定されていません。");
-    const google = createGoogleGenerativeAI({ apiKey: googleApiKey });
-    const modelName = process.env.GEMINI_MODEL || "";
-    if (!modelName)
-      throw new Error("GEMINI_MODELが.envファイルに設定されていません。");
-    return google(modelName);
+  const getModelName = (providerName: string): string => {
+    const modelEnvVar = `${providerName.toUpperCase()}_${role.toUpperCase()}_MODEL`;
+    const modelName = process.env[modelEnvVar];
+    if (!modelName) {
+      throw new Error(
+        `環境変数 ${modelEnvVar} が.envファイルに設定されていません。`,
+      );
+    }
+    return modelName;
+  };
+
+  switch (provider) {
+    case "google": {
+      const apiKey = process.env.GOOGLE_API_KEY;
+      if (!apiKey)
+        throw new Error("GOOGLE_API_KEYが.envファイルに設定されていません。");
+      const google = createGoogleGenerativeAI({ apiKey });
+      const modelName = getModelName("google");
+      return google(modelName);
+    }
+    case "groq": {
+      const apiKey = process.env.GROQ_API_KEY;
+      if (!apiKey)
+        throw new Error("GROQ_API_KEYが.envファイルに設定されていません。");
+      const groq = createGroq({ apiKey });
+      const modelName = getModelName("groq");
+      return groq(modelName);
+    }
+    case "openrouter": {
+      const apiKey = process.env.OPENROUTER_API_KEY;
+      if (!apiKey)
+        throw new Error(
+          "OPENROUTER_API_KEYが.envファイルに設定されていません。",
+        );
+      const openrouter = createOpenAI({
+        apiKey: apiKey,
+        baseURL: "https://openrouter.ai/api/v1",
+        fetch: async (url, options) => {
+          const headers = {
+            ...options?.headers,
+            "HTTP-Referer":
+              process.env.OPENROUTER_HTTP_REFERER || "http://localhost:3000",
+            "X-Title":
+              process.env.OPENROUTER_X_TITLE || "Stagehand Agent Console",
+          };
+          return fetch(url, { ...options, headers });
+        },
+      });
+      const modelName = getModelName("openrouter");
+      return openrouter(modelName);
+    }
+    case "cerebras": {
+      const apiKey = process.env.CEREBRAS_API_KEY;
+      if (!apiKey)
+        throw new Error("CEREBRAS_API_KEYが.envファイルに設定されていません。");
+      // Cerebras APIはOpenAI互換のため、createOpenAIクライアントを使用する
+      const cerebras = createOpenAI({
+        apiKey: apiKey,
+        baseURL: "https://api.cerebras.ai/v1", // Cerebrasの公式APIエンドポイント
+      });
+      const modelName = getModelName("cerebras");
+      return cerebras(modelName);
+    }
+    default:
+      throw new Error(
+        `サポートされていないLLMプロバイダです: "${provider}"。'google', 'groq', 'openrouter', 'cerebras'のいずれかを指定してください。`,
+      );
   }
 }
 
@@ -117,7 +151,7 @@ export async function generateObjectWithRetry<
   schema: T;
   messages?: CoreMessage[];
   prompt?: string;
-  [key: string]: any; // その他のオプショナルなプロパティを許容
+  [key: string]: any;
 }) {
   let lastError: any;
   for (let i = 0; i < MAX_RETRIES; i++) {
