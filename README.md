@@ -45,42 +45,94 @@
 
 ```mermaid
 flowchart TD
-  subgraph User ["User (ユーザー操作)"]
-    A[高レベルなタスク]
-  end
-  subgraph Chief ["Chief Agent (戦略層)"]
-    B["1. マイルストーン計画<br/>(高性能LLM)"]
-    B_replan["戦略的再計画<br/>or タスク中止判断"]
-  end
-  subgraph Coordinator ["Subgoal Coordinator (戦術層)"]
-    C{マイルストーン実行ループ}
-    subgraph Team ["Specialist Agent Team (専門チーム)"]
-        D["2. 戦術計画<br/>(高速LLM)"]
-        E["3. アクション計画<br/>(Analyst Swarm)"]
-        F["4. アクション実行<br/>(Executor)"]
-        G["5. 成功検証<br/>(QA Agent)"]
+    %% スタイル定義
+    classDef userClass fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef chiefClass fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef coordClass fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef teamClass fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+    classDef systemClass fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef decisionClass fill:#fff9c4,stroke:#f57f17,stroke-width:3px
+    classDef processClass fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
+    
+    %% ユーザー層
+    A[👤 高レベルなタスク入力]:::userClass
+    
+    %% Chief Agent層（戦略）
+    B[🎯 マイルストーン計画策定<br/>📊 高性能LLM活用]:::chiefClass
+    B_replan[🔄 戦略的再計画<br/>⚠️ タスク中止判断]:::chiefClass
+    
+    %% Coordinator層（戦術）
+    C{🎮 マイルストーン<br/>実行開始}:::decisionClass
+    
+    %% 専門チーム（実行層）
+    D[⚡ 戦術計画立案<br/>🚀 高速LLM]:::teamClass
+    E[🔍 アクション最適化<br/>👥 Analyst Swarm]:::teamClass
+    F[⚙️ アクション実行<br/>🛠️ Executor]:::teamClass
+    G[✅ 成果検証<br/>🔬 QA Agent]:::teamClass
+    
+    %% 品質管理・判定
+    H{📋 QA検証結果}:::decisionClass
+    I[🚨 修復限界チェック<br/>📈 FailureTracker]:::processClass
+    
+    %% システム判定
+    J{🏁 全マイルストーン<br/>完了確認}:::decisionClass
+    K[🎉 タスク完了]:::systemClass
+    
+    %% フロー接続
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
+    
+    %% 成功パス
+    H -->|✅ 成功| J
+    J -->|✅ 完了| K
+    J -->|❌ 未完了| C
+    
+    %% 失敗・修復パス
+    H -->|❌ 失敗| I
+    I -->|🔧 修復可能| E
+    I -->|⛔ 修復限界| B_replan
+    B_replan --> C
+    
+    %% グループ化
+    subgraph User_Layer [" 👤 ユーザー層 "]
+        A
     end
-    H{QA検証結果}
-    I{自己修復限界?<br/>(FailureTracker)}
-  end
-  subgraph System ["System (システム判定)"]
-    J{全マイルストーン完了?}
-    K[タスク完了]
-  end
-  A --> B
-  B -- マイルストーン計画 --> C
-  C --> D
-  D -- サブゴール --> E
-  E -- 最適アクション --> F
-  F -- 実行結果 --> G
-  G --> H
-  H -->|成功| J
-  H -->|失敗| I
-  I -->|いいえ 修復可能| E
-  I -->|はい 修復限界| B_replan
-  B_replan -- 新計画/中止 --> C
-  J -->|いいえ| C
-  J -->|はい| K
+    
+    subgraph Chief_Layer [" 🎯 戦略層 (Chief Agent) "]
+        B
+        B_replan
+    end
+    
+    subgraph Execution_Layer [" ⚡ 実行層 (Specialist Team) "]
+        D
+        E
+        F
+        G
+    end
+    
+    subgraph Control_Layer [" 🎮 制御層 (Coordinator) "]
+        C
+        H
+        I
+    end
+    
+    subgraph System_Layer [" 🏁 システム層 "]
+        J
+        K
+    end
+    
+    %% クラス適用
+    class A userClass
+    class B,B_replan chiefClass
+    class C,H,J decisionClass
+    class D,E,F,G teamClass
+    class I processClass
+    class K systemClass
 ```
 
 ## 🛠️ セットアップ
